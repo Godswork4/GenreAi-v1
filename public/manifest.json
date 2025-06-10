@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AI DeFi Copilot",
+  "version": "1.0.0",
+  "description": "AI-powered DeFi trading assistant",
+  "web_accessible_resources": [{
+    "resources": [
+      "src/assets/*.svg",
+      "src/assets/root-icon.svg",
+      "src/assets/xrp-icon.svg",
+      "src/assets/asto-icon.svg"
+    ],
+    "matches": ["<all_urls>"]
+  }]
+} 
