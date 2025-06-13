@@ -12,73 +12,96 @@ export default defineConfig({
     wasm(),
     topLevelAwait(),
     nodePolyfills({
-      include: ['crypto', 'stream', 'buffer'],
+      include: ['crypto', 'stream', 'buffer', 'util', 'process'],
       globals: {
         Buffer: true,
         global: true,
         process: true,
       },
-      protocolImports: true,
     })
   ],
+  define: {
+    'process.env.NODE_DEBUG': 'false',
+    'global': 'globalThis',
+  },
   server: {
     port: 3000,
-    host: true,
-    cors: true,
+    host: 'localhost',
+    strictPort: true,
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['X-Client-Info', 'Content-Type', 'Authorization'],
+      credentials: true
+    },
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'X-Requested-With, Content-Type, Authorization'
+      'Access-Control-Allow-Headers': 'X-Client-Info, Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Content-Security-Policy': `
+        default-src 'self' chrome-extension: https: http: ws: wss:;
+        script-src 'self' 'unsafe-eval' 'unsafe-inline' chrome-extension:;
+        connect-src 'self' https: wss: chrome-extension: http: ws:;
+        img-src 'self' data: https: chrome-extension:;
+        style-src 'self' 'unsafe-inline' chrome-extension:;
+        frame-src 'self' chrome-extension:;
+        worker-src 'self' blob: chrome-extension:;
+      `.replace(/\s+/g, ' ').trim()
     }
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
       'bn.js': path.resolve(__dirname, 'node_modules/bn.js/lib/bn.js'),
-      crypto: 'crypto-browserify',
       stream: 'stream-browserify',
-      buffer: 'buffer'
+      crypto: 'crypto-browserify',
+      buffer: 'buffer/',
+      util: 'util/',
+      process: 'process/browser',
     },
-    dedupe: ['bn.js', '@futureverse/auth-react', '@futureverse/auth-ui', 'wagmi', 'viem']
+    dedupe: ['bn.js', 'wagmi', 'viem'],
   },
   optimizeDeps: {
     include: [
-      '@polkadot/api',
       '@polkadot/util-crypto',
-      '@polkadot/keyring',
-      '@polkadot/extension-dapp',
-      '@futureverse/auth-react',
-      '@futureverse/auth-ui',
-      'wagmi',
-      'viem'
+      '@polkadot/wasm-crypto',
+      '@polkadot/wasm-crypto-wasm',
+      '@polkadot/wasm-crypto-asmjs'
     ],
+    exclude: [],
     esbuildOptions: {
-      target: 'esnext'
+      target: 'esnext',
+      supported: {
+        bigint: true
+      }
     }
   },
   build: {
     target: 'esnext',
     sourcemap: true,
     assetsInlineLimit: 0,
+    modulePreload: {
+      polyfill: true
+    },
     rollupOptions: {
       output: {
         manualChunks: {
-          'polkadot': [
-            '@polkadot/api',
-            '@polkadot/util-crypto',
-            '@polkadot/keyring',
-            '@polkadot/extension-dapp'
-          ],
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'web3-vendor': ['@reown/appkit', '@wagmi/core', 'viem', 'wagmi', '@futureverse/auth-react', '@futureverse/auth-ui'],
-          'ui-vendor': ['framer-motion', '@heroicons/react']
+          'web3-vendor': ['wagmi', 'viem'],
+          'ui-vendor': ['framer-motion', '@heroicons/react'],
+          'polkadot-vendor': [
+            '@polkadot/util-crypto',
+            '@polkadot/api',
+            '@polkadot/keyring',
+            '@polkadot/wasm-crypto',
+            '@polkadot/wasm-crypto-wasm',
+            '@polkadot/wasm-crypto-asmjs'
+          ]
         }
       }
     }
-  },
-  define: {
-    global: 'globalThis',
   }
 });

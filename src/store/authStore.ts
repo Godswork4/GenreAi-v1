@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { DemoWalletService } from '../services/demoWalletService';
-import { useAccount, useConnect, useDisconnect } from '@futureverse/auth-react/wagmi';
+import { demoWalletService } from '../services/demoWalletService';
 import { authClient } from '../config/auth';
 import { useDemoStore } from './demoStore';
 
@@ -17,11 +16,11 @@ interface AuthState {
   userEmail: string | null;
   isLoading: boolean;
   error: string | null;
+  setUser: (user: User) => void;
   login: () => Promise<void>;
   loginWithDemo: () => Promise<void>;
   loginWithFuturePass: () => Promise<void>;
-  logout: () => void;
-  setUser: (user: User) => void;
+  logout: () => Promise<void>;
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
@@ -43,7 +42,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async () => {
     set({ isLoading: true, error: null });
     try {
-      await authClient.signIn();
+      await authClient.signIn({ type: 'futureverseCustodialEmail' });
       // The actual user setting will happen in the callback
     } catch (error) {
       console.error('Login error:', error);
@@ -57,18 +56,21 @@ export const useAuth = create<AuthState>((set, get) => ({
   loginWithDemo: async () => {
     set({ isLoading: true, error: null });
     try {
-      // Initialize demo wallet
-      await DemoWalletService.initialize();
-      const wallet = await DemoWalletService.getWallet();
+      const address = demoWalletService.getAddress();
+      const polkadotAddress = demoWalletService.getPolkadotAddress();
+      
+      if (!address || !polkadotAddress) {
+        throw new Error('Failed to initialize demo wallet');
+      }
       
       const demoUser: User = {
         email: 'demo@genre.ai',
-        demoWalletAddress: wallet.address,
+        demoWalletAddress: address,
         isDemo: true
       };
       
       // Set demo mode in demo store
-      await useDemoStore.getState().setDemoMode(true);
+      useDemoStore.getState().setDemoMode(true);
       
       // Set auth state
       set({ 
@@ -84,28 +86,28 @@ export const useAuth = create<AuthState>((set, get) => ({
         isLoading: false 
       });
       // Reset demo mode on error
-      await useDemoStore.getState().setDemoMode(false);
+      useDemoStore.getState().setDemoMode(false);
     }
   },
 
   loginWithFuturePass: async () => {
     set({ isLoading: true, error: null });
     try {
-      await authClient.signIn();
-      const account = await authClient.getAccount();
+      await authClient.signIn({ type: 'futureverseCustodialEmail' });
+      const userSession = await authClient.userSession;
       
-      if (!account) {
+      if (!userSession) {
         throw new Error('Failed to get FuturePass account');
       }
 
       const user: User = {
-        futurePassAddress: account.address,
-        email: account.email,
+        futurePassAddress: userSession.futurepass,
+        email: userSession.user?.email,
         isDemo: false
       };
 
       // Ensure demo mode is off
-      await useDemoStore.getState().setDemoMode(false);
+      useDemoStore.getState().setDemoMode(false);
 
       set({
         user,
@@ -125,9 +127,9 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await authClient.signOut();
+      await authClient.signOutPass();
       // Reset demo mode
-      await useDemoStore.getState().setDemoMode(false);
+      useDemoStore.getState().setDemoMode(false);
     } catch (error) {
       console.error('Logout error:', error);
     } finally {

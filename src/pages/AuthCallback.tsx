@@ -1,18 +1,25 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@futureverse/auth-react';
+import { useAuth as useAuthStore } from '../store/authStore';
 
 export const AuthCallback = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { userSession, isFetchingSession } = useAuth();
+  const { setUser, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+    if (!isFetchingSession && userSession) {
+      setUser({
+        futurePassAddress: userSession.futurepass,
+        email: userSession.user?.email,
+        isDemo: false
+      });
       navigate('/app');
-    } else if (!isLoading && !isAuthenticated) {
+    } else if (!isFetchingSession && !userSession) {
       navigate('/');
     }
-  }, [isLoading, isAuthenticated, navigate]);
+  }, [isFetchingSession, userSession, setUser, navigate]);
 
   return (
     <div className="min-h-screen bg-[#0B0B14] flex items-center justify-center">

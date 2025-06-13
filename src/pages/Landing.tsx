@@ -1,18 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, Variants } from 'framer-motion';
+import { useAuth } from '@futureverse/auth-react';
+import { useAuth as useAuthStore } from '../store/authStore';
 import { Logo } from '../components/Logo';
 import { WaitlistForm } from '../components/Waitlist';
-import { FuturePassAuth } from '../components/FuturePassAuth';
-import { useAuth } from '../store/authStore';
 
-const fadeInUp = {
+const fadeInUp: Variants = {
   initial: { opacity: 0, y: 20 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.6 }
+  animate: { opacity: 1, y: 0 }
 };
 
-const staggerContainer = {
+const staggerContainer: Variants = {
   animate: {
     transition: {
       staggerChildren: 0.1
@@ -20,7 +19,7 @@ const staggerContainer = {
   }
 };
 
-const floatingAnimation = {
+const floatingAnimation: Variants = {
   initial: { y: 0 },
   animate: {
     y: [0, -10, 0],
@@ -32,7 +31,7 @@ const floatingAnimation = {
   }
 };
 
-const glowAnimation = {
+const glowAnimation: Variants = {
   initial: { opacity: 0.5 },
   animate: {
     opacity: [0.5, 1, 0.5],
@@ -65,7 +64,8 @@ const features = [
 export const Landing = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { loginWithDemo } = useAuth();
+  const { signIn } = useAuth();
+  const { loginWithDemo } = useAuthStore();
   const featuresRef = useRef<HTMLDivElement>(null);
   const aboutRef = useRef<HTMLDivElement>(null);
   const contactRef = useRef<HTMLDivElement>(null);
@@ -93,6 +93,15 @@ export const Landing = () => {
       navigate('/app');
     } catch (error) {
       console.error('Failed to start demo:', error);
+    }
+  };
+
+  const handleFuturePassLogin = async () => {
+    try {
+      await signIn({ type: 'futureverseCustodialEmail' });
+      // The actual navigation will happen in the callback
+    } catch (error) {
+      console.error('Failed to login with FuturePass:', error);
     }
   };
 
@@ -142,7 +151,14 @@ export const Landing = () => {
             variants={fadeInUp}
             className="flex flex-col items-center gap-6 max-w-md mx-auto"
           >
-            <FuturePassAuth />
+            <motion.button
+              onClick={handleFuturePassLogin}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-full px-8 py-4 text-lg font-medium rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#4D4DFF] hover:shadow-[0_0_20px_rgba(0,229,255,0.5)] transition-shadow"
+            >
+              Sign in with FuturePass
+            </motion.button>
             
             <div className="w-full flex items-center gap-4 my-2">
               <div className="flex-1 h-px bg-[#4D4DFF]/30" />

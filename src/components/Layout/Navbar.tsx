@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, ClipboardIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useWalletConnection } from '../../hooks/useWalletConnection';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { isConnected, isLoading, connect, disconnect, address } = useWalletConnection();
 
   const navItems = [
@@ -20,6 +21,14 @@ const Navbar = () => {
       disconnect();
     } else {
       connect();
+    }
+  };
+
+  const handleCopy = () => {
+    if (address) {
+      navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     }
   };
 
@@ -69,7 +78,7 @@ const Navbar = () => {
                 whileTap={{ scale: 0.95 }}
                 onClick={handleWalletClick}
                 disabled={isLoading}
-                className={`px-6 py-2 text-sm font-medium text-white rounded-lg shadow-glow transition-all duration-300 ${
+                className={`relative px-6 py-2 text-sm font-medium text-white rounded-lg shadow-glow transition-all duration-300 ${
                   isLoading
                     ? 'bg-gray-600 cursor-not-allowed'
                     : 'bg-gradient-to-r from-primary to-secondary hover:shadow-glow-strong'
@@ -78,7 +87,18 @@ const Navbar = () => {
                 {isLoading
                   ? 'Connecting...'
                   : isConnected
-                  ? formatAddress(address || '')
+                  ? (
+                    <span className="flex items-center gap-2">
+                      {formatAddress(address || '')}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCopy(); }}
+                        className="hover:text-blue-400"
+                        title="Copy address"
+                      >
+                        {copied ? <CheckIcon className="w-4 h-4" /> : <ClipboardIcon className="w-4 h-4" />}
+                      </button>
+                    </span>
+                  )
                   : 'Connect Wallet'}
               </motion.button>
             </div>
@@ -130,7 +150,18 @@ const Navbar = () => {
               {isLoading
                 ? 'Connecting...'
                 : isConnected
-                ? formatAddress(address || '')
+                ? (
+                  <span className="flex items-center gap-2">
+                    {formatAddress(address || '')}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCopy(); }}
+                      className="hover:text-blue-400"
+                      title="Copy address"
+                    >
+                      {copied ? <CheckIcon className="w-4 h-4" /> : <ClipboardIcon className="w-4 h-4" />}
+                    </button>
+                  </span>
+                )
                 : 'Connect Wallet'}
             </button>
           </div>

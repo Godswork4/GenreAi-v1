@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from '@futureverse/auth-react';
+import { useAuth } from './store/authStore';
 import MainLayout from './components/Layout/MainLayout';
 import { Landing } from './pages/Landing';
 import { AuthCallback } from './pages/AuthCallback';

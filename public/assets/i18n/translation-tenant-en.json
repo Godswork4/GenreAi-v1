@@ -1,0 +1,25 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "try_again": "Try Again",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "connect": "Connect",
+    "disconnect": "Disconnect"
+  },
+  "auth": {
+    "connect_wallet": "Connect Wallet",
+    "connecting": "Connecting...",
+    "connect_with_futurepass": "Connect with FuturePass",
+    "connect_with_demo": "Try Demo Mode",
+    "logout": "Logout",
+    "login_failed": "Login failed. Please try again."
+  },
+  "errors": {
+    "something_went_wrong": "Something went wrong",
+    "connection_failed": "Connection failed",
+    "please_try_again": "Please try again"
+  }
+} 

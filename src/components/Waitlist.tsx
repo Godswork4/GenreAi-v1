@@ -6,6 +6,7 @@ export const WaitlistForm = () => {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [hasFollowed, setHasFollowed] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +23,25 @@ export const WaitlistForm = () => {
     }
   };
 
+  const handleFollow = () => {
+    window.open('https://twitter.com/genre_ai', '_blank');
+    setHasFollowed(true);
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {!hasFollowed && (
+        <div className="flex flex-col items-center space-y-2">
+          <p className="text-gray-300 text-center">To join the waitlist, please follow us on Twitter first.</p>
+          <button
+            type="button"
+            onClick={handleFollow}
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+          >
+            Follow on Twitter
+          </button>
+        </div>
+      )}
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
           Email Address
@@ -36,7 +54,8 @@ export const WaitlistForm = () => {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Enter your email"
           required
-          className="w-full px-4 py-3 bg-[#0B0B14] border border-[#4D4DFF]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00E5FF]/50 focus:border-transparent transition-all duration-200 placeholder-gray-500"
+          disabled={!hasFollowed}
+          className="w-full px-4 py-3 bg-[#0B0B14] border border-[#4D4DFF]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00E5FF]/50 focus:border-transparent transition-all duration-200 placeholder-gray-500 disabled:opacity-50"
         />
       </div>
 
@@ -62,11 +81,11 @@ export const WaitlistForm = () => {
 
       <motion.button
         type="submit"
-        disabled={status === 'loading'}
+        disabled={status === 'loading' || !hasFollowed}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className={`w-full px-6 py-3 text-lg font-medium rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#4D4DFF] text-white transition-all duration-200 ${
-          status === 'loading'
+          status === 'loading' || !hasFollowed
             ? 'opacity-75 cursor-not-allowed'
             : 'hover:shadow-[0_0_20px_rgba(0,229,255,0.3)]'
         }`}

@@ -28,13 +28,15 @@ const SpeechAssistant: React.FC<SpeechAssistantProps> = ({ onTranscript, isProce
       setIsSupported(true);
       recognitionRef.current = new SpeechRecognition();
       
-      // Configure speech recognition
-      recognitionRef.current.continuous = false;
+      // Configure speech recognition with improved settings
+      recognitionRef.current.continuous = true; // Keep listening
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'en-US';
-      recognitionRef.current.maxAlternatives = 1;
+      recognitionRef.current.maxAlternatives = 3; // Get more alternatives
+      recognitionRef.current.grammars = new (window as any).webkitSpeechGrammarList(); // Add grammar support
 
       recognitionRef.current.onstart = () => {
+        console.log('Speech recognition started');
         setIsListening(true);
         setTranscript('');
       };
@@ -47,8 +49,10 @@ const SpeechAssistant: React.FC<SpeechAssistantProps> = ({ onTranscript, isProce
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
+            console.log('Final transcript:', finalTranscript);
           } else {
             interimTranscript += transcript;
+            console.log('Interim transcript:', interimTranscript);
           }
         }
 
@@ -56,7 +60,8 @@ const SpeechAssistant: React.FC<SpeechAssistantProps> = ({ onTranscript, isProce
 
         if (finalTranscript) {
           onTranscript(finalTranscript);
-          setTranscript('');
+          // Don't clear transcript immediately to show feedback
+          setTimeout(() => setTranscript(''), 1000);
         }
       };
 

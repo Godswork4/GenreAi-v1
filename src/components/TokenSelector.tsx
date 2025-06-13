@@ -1,5 +1,6 @@
 import React from 'react';
 import { TokenIcon } from './TokenIcon';
+import { Token } from './TokenIcon';
 
 export interface Token {
   symbol: string;
@@ -14,60 +15,32 @@ interface TokenSelectorProps {
   tokens: Token[];
   onSelect: (token: Token) => void;
   disabled?: boolean;
+  show: boolean;
+  onClose: () => void;
 }
 
-export const TokenSelector: React.FC<TokenSelectorProps> = ({
-  selectedToken,
-  tokens,
-  onSelect,
-  disabled = false
-}) => {
+export const TokenSelector = ({ selectedToken, tokens, onSelect, show, onClose }: TokenSelectorProps) => {
+  if (!show) return null;
   return (
-    <div className="relative">
-      <select
-        className={`appearance-none w-full pl-10 pr-8 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white ${
-          disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-600'
-        }`}
-        value={selectedToken?.symbol || ''}
-        onChange={(e) => {
-          const token = tokens.find(t => t.symbol === e.target.value);
-          if (token) onSelect(token);
-        }}
-        disabled={disabled}
-      >
-        <option value="" disabled>
-          Select
-        </option>
-        {tokens.map((token) => (
-          <option key={token.symbol} value={token.symbol}>
-            {token.symbol}
-          </option>
-        ))}
-      </select>
-      
-      <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none">
-        {selectedToken && (
-          <TokenIcon
-            token={selectedToken.symbol as 'ROOT' | 'XRP' | 'USDT' | 'ASTO'}
-            size="sm"
-          />
-        )}
+    <div className="w-64 bg-[#181A20] rounded-2xl shadow-xl p-4 z-50 absolute left-0 top-10">
+      <div className="font-semibold text-white mb-2 flex justify-between items-center">
+        Select Token
+        <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
       </div>
-      
-      <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
-        <svg
-          className="h-4 w-4 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+      <div className="space-y-2">
+        {tokens.map(token => (
+          <button
+            key={token.symbol}
+            onClick={() => onSelect(token)}
+            className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl transition-colors ${selectedToken?.symbol === token.symbol ? 'bg-blue-900/60 text-blue-300' : 'hover:bg-gray-700/40 text-white'}`}
+          >
+            <img src={token.icon} alt={token.symbol} className="w-8 h-8 rounded-full" />
+            <div className="flex flex-col items-start">
+              <span className="font-bold text-base">{token.symbol}</span>
+              <span className="text-xs text-gray-400">{token.name}</span>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );

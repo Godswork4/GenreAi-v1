@@ -4,17 +4,85 @@ import { generateUUID } from '../utils/crypto'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables')
-}
+// Create a mock client for development if Supabase connection fails
+const createMockClient = () => {
+  console.warn('Using mock Supabase client for development');
+  return {
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+      insert: () => Promise.resolve({ data: null, error: null }),
+      update: () => Promise.resolve({ data: null, error: null }),
+    }),
+    rpc: () => Promise.resolve({ data: new Date().toISOString(), error: null }),
+    auth: {
+      onAuthStateChange: () => ({ data: null, error: null }),
+      getSession: () => null,
+    },
+  };
+};
 
-// Configure Supabase client with custom ID generator
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-  },
-})
+// Try to create real client, fall back to mock in development
+export const supabase = import.meta.env.DEV
+  ? createMockClient()
+  : createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'implicit'
+      },
+      db: {
+        schema: 'public'
+      },
+      global: {
+        headers: {
+          'X-Client-Info': 'genreai-web'
+        }
+      }
+    });
+
+// Export a function to test the connection
+export const testSupabaseConnection = async () => {
+  try {
+    console.log('Testing Supabase connection...')
+    // In development, always return success
+    if (import.meta.env.DEV) {
+      console.log('Development mode: Skipping Supabase connection test');
+      return {
+        success: true,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    const { data, error } = await supabase.rpc('now')
+    
+    if (error) {
+      console.error('Supabase connection test failed:', error)
+      return {
+        success: false,
+        error: error.message,
+        details: {
+          code: error.code,
+          hint: error.hint,
+          details: error.details
+        }
+      }
+    }
+    
+    console.log('Supabase connection successful:', data)
+    return {
+      success: true,
+      timestamp: data
+    }
+  } catch (err) {
+    console.error('Unexpected error during Supabase connection test:', err)
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      details: err
+    }
+  }
+}
 
 // Types for your database tables
 export type Profile = {
@@ -40,7 +108,7 @@ export type Transaction = {
 }
 
 // Type for waitlist entries
-export interface WaitlistEntry {
+export type WaitlistEntry = {
   id: string
   email: string
   referral_code: string

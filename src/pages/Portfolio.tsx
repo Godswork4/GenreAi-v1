@@ -8,15 +8,20 @@ import {
   ChartBarIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
-  UserCircleIcon
+  UserCircleIcon,
+  CurrencyDollarIcon,
+  ClockIcon,
+  ClipboardIcon,
+  CheckIcon
 } from '@heroicons/react/24/outline';
+import { ethers } from 'ethers';
+import { DEX_PRECOMPILE_ABI } from '@therootnetwork/evm';
 
 interface TokenBalance {
   symbol: string;
   balance: string;
   decimals: number;
-  value: number; // USD value
-  change24h: number;
+  value: number;
 }
 
 interface PoolPosition {
@@ -26,6 +31,21 @@ interface PoolPosition {
   value: number;
   apy: number;
 }
+
+interface Transaction {
+  hash: string;
+  type: 'send' | 'receive' | 'swap' | 'stake';
+  amount: string;
+  token: string;
+  timestamp: number;
+  status: 'completed' | 'pending' | 'failed';
+}
+
+const DEX_ADDRESS = '0x000000000000000000000000000000000000DdDD';
+const ROOT_ADDRESS = '0xCCCCCCCC00000001000000000000000000000000';
+const USDC_ADDRESS = '0xCCCCCCCC00000864000000000000000000000000';
+const XRP_ADDRESS = '0xCCCCCCCC00000002000000000000000000000000';
+const ASTO_ADDRESS = '0xCCCCCCCC00004464000000000000000000000000';
 
 const Portfolio: React.FC = () => {
   const { user } = useAuth();
@@ -38,62 +58,71 @@ const Portfolio: React.FC = () => {
     apy: 0
   });
   const [totalValue, setTotalValue] = useState(0);
-  const [totalChange, setTotalChange] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
 
-  const activeAddress = isDemoMode ? demoWallet?.address : user?.futurePassAddress;
-
-  // Mock price data - in production, fetch from price API
-  const tokenPrices: Record<string, { price: number; change24h: number }> = {
-    ROOT: { price: 0.05, change24h: 5.2 },
-    XRP: { price: 0.52, change24h: -2.1 },
-    USDT: { price: 1.00, change24h: 0.1 },
-    ASTO: { price: 0.12, change24h: 8.7 }
-  };
+  const activeAddress = isDemoMode ? demoWallet?.evmAddress : null;
 
   useEffect(() => {
-    if (activeAddress) {
-      fetchPortfolioData();
-    }
-  }, [activeAddress]);
+    fetchPortfolioData();
+    // Fetch real token prices from DEX precompile
+    const fetchPrices = async () => {
+      try {
+        // Use window.ethereum or fallback to a default provider
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const dex = new ethers.Contract(DEX_ADDRESS, DEX_PRECOMPILE_ABI, provider);
+        // Get price of 1 ROOT in USDC
+        const amountIn = ethers.utils.parseUnits('1', 6); // 1 ROOT (6 decimals)
+        const amountsOut = await dex.getAmountsOut(amountIn, [ROOT_ADDRESS, USDC_ADDRESS]);
+        const rootPrice = parseFloat(ethers.utils.formatUnits(amountsOut[1], 6));
+        // Optionally fetch other token prices similarly
+        setTokenPrices({ ROOT: rootPrice });
+      } catch (err) {
+        setTokenPrices({ ROOT: 0 });
+      }
+    };
+    fetchPrices();
+  }, []);
 
   const fetchPortfolioData = async () => {
-    if (!activeAddress) return;
+    if (!activeAddress) {
+      setIsLoading(false);
+      setError('Please connect your wallet');
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError(null);
 
-      // Fetch token balances
+      // Fetch ROOT balance
+      const rootBalance = await RootNetworkService.getBalance(activeAddress, 1);
+      // Fetch other token balances
       const balances = await RootNetworkService.getTokenBalances(activeAddress);
-      const tokenData: TokenBalance[] = [];
-      let portfolioValue = 0;
-      let weightedChange = 0;
-
-      for (const [symbol, balance] of Object.entries(balances)) {
-        const tokenInfo = Object.values(RootNetworkService.TOKENS).find(t => t.symbol === symbol);
-        if (tokenInfo && balance !== '0') {
-          const formattedBalance = parseInt(balance) / Math.pow(10, tokenInfo.decimals);
-          const priceData = tokenPrices[symbol] || { price: 0, change24h: 0 };
-          const value = formattedBalance * priceData.price;
-          
-          tokenData.push({
-            symbol,
-            balance,
-            decimals: tokenInfo.decimals,
-            value,
-            change24h: priceData.change24h
-          });
-
-          portfolioValue += value;
-          weightedChange += value * priceData.change24h;
+      const allTokens = Object.values(RootNetworkService.TOKENS);
+      const tokenData: TokenBalance[] = allTokens.map(tokenInfo => {
+        let balance = '0';
+        if (tokenInfo.symbol === 'ROOT') {
+          balance = rootBalance || '0';
+        } else {
+          balance = balances[tokenInfo.symbol] || '0';
         }
-      }
-
+        const formattedBalance = parseFloat(balance) / Math.pow(10, tokenInfo.decimals);
+        const price = tokenPrices[tokenInfo.symbol] || 0;
+        const value = formattedBalance * price;
+        return {
+          symbol: tokenInfo.symbol,
+          balance,
+          decimals: tokenInfo.decimals,
+          value
+        };
+      });
+      let portfolioValue = tokenData.reduce((sum, t) => sum + t.value, 0);
       setTokens(tokenData);
       setTotalValue(portfolioValue);
-      setTotalChange(portfolioValue > 0 ? weightedChange / portfolioValue : 0);
 
       // Fetch staking info
       const staking = await RootNetworkService.getStakingInfo(activeAddress);
@@ -125,16 +154,20 @@ const Portfolio: React.FC = () => {
       }
 
       setPools(poolPositions);
+
+      // Remove mock transactions
+      setTransactions([]);
+
     } catch (error) {
       console.error('Error fetching portfolio data:', error);
-      setError('Failed to fetch portfolio data');
+      setError('Failed to load portfolio data');
     } finally {
       setIsLoading(false);
     }
   };
 
   const formatAmount = (amount: string, decimals: number) => {
-    return (parseInt(amount || '0') / Math.pow(10, decimals)).toFixed(6);
+    return (parseFloat(amount || '0') / Math.pow(10, decimals)).toFixed(6);
   };
 
   const formatCurrency = (value: number) => {
@@ -152,171 +185,158 @@ const Portfolio: React.FC = () => {
     }
   };
 
+  if (!activeAddress) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-[#1A1B1F] rounded-2xl p-8 text-center">
+          <UserCircleIcon className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Connect Wallet</h2>
+          <p className="text-gray-400">Connect your wallet to view your portfolio</p>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid gap-6">
+          {/* Portfolio Value Skeleton */}
+          <div className="bg-[#1A1B1F] rounded-2xl p-6 animate-pulse">
+            <div className="h-8 w-48 bg-gray-700 rounded mb-4"></div>
+            <div className="h-12 w-32 bg-gray-700 rounded"></div>
+          </div>
+
+          {/* Assets Skeleton */}
+          <div className="bg-[#1A1B1F] rounded-2xl p-6">
+            <div className="h-6 w-24 bg-gray-700 rounded mb-6"></div>
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-gray-700 rounded-full"></div>
+                  <div className="flex-1">
+                    <div className="h-5 w-20 bg-gray-700 rounded mb-2"></div>
+                    <div className="h-4 w-32 bg-gray-700 rounded"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Portfolio</h1>
+    <div className="container mx-auto px-4 py-8">
+      {/* Wallet Address Display */}
+      <div className="flex items-center gap-2 mb-8">
+        <span className="font-mono text-xs text-gray-300 bg-gray-800/50 px-2 py-1 rounded">
+          {activeAddress ? activeAddress : 'No address'}
+        </span>
         <button
-          onClick={requestFaucet}
-          className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
+          onClick={() => {
+            if (activeAddress) {
+              navigator.clipboard.writeText(activeAddress);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }
+          }}
+          className="hover:text-blue-400"
+          title="Copy address"
         >
-          Get Testnet Tokens
+          {copied ? <CheckIcon className="w-4 h-4" /> : <ClipboardIcon className="w-4 h-4" />}
         </button>
       </div>
-
-      {/* Wallet Info */}
-      <div className="bg-[#1a1b1f] rounded-xl p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <UserCircleIcon className="w-8 h-8 text-gray-400" />
-            <div>
-              <div className="text-sm text-gray-400">Connected Wallet</div>
-              <div className="font-mono text-white">
-                {activeAddress ? `${activeAddress.slice(0, 8)}...${activeAddress.slice(-8)}` : 'Not connected'}
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-400">Network</div>
-            <div className="text-white">Root Network Testnet</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Portfolio Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid gap-6">
+        {/* Portfolio Value */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-[#1a1b1f] rounded-xl p-6"
+          className="bg-[#1A1B1F] rounded-2xl p-6"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <ChartBarIcon className="w-6 h-6 text-blue-400" />
-            <h3 className="text-lg font-semibold text-white">Total Balance</h3>
-          </div>
-          <div className="space-y-2">
-            <div className="text-3xl font-bold text-white">
-              {formatCurrency(totalValue)}
-            </div>
-            <div className={`flex items-center gap-1 text-sm ${
-              totalChange >= 0 ? 'text-green-400' : 'text-red-400'
-            }`}>
-              {totalChange >= 0 ? (
-                <ArrowTrendingUpIcon className="w-4 h-4" />
-              ) : (
-                <ArrowTrendingDownIcon className="w-4 h-4" />
-              )}
-              {totalChange >= 0 ? '+' : ''}{totalChange.toFixed(2)}% (24h)
-            </div>
+          <h2 className="text-xl font-semibold text-white mb-4">Portfolio Value</h2>
+          <div className="flex items-baseline gap-4">
+            <span className="text-3xl font-bold text-white">
+              ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
           </div>
         </motion.div>
 
+        {/* Assets */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-[#1a1b1f] rounded-xl p-6"
+          className="bg-[#1A1B1F] rounded-2xl p-6"
         >
-          <h3 className="text-lg font-semibold text-white mb-4">Staked Assets</h3>
-          <div className="space-y-2">
-            <div className="text-2xl font-bold text-white">
-              {formatAmount(stakingInfo.userStaked, 6)} ROOT
-            </div>
-            <div className="text-sm text-gray-400">
-              APY: <span className="text-green-400">{stakingInfo.apy}%</span>
-            </div>
-            <div className="text-sm text-gray-400">
-              Rewards: <span className="text-green-400">{formatAmount(stakingInfo.rewards, 6)} ROOT</span>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-[#1a1b1f] rounded-xl p-6"
-        >
-          <h3 className="text-lg font-semibold text-white mb-4">Liquidity Pools</h3>
-          <div className="space-y-2">
-            <div className="text-2xl font-bold text-white">
-              {pools.reduce((sum, pool) => sum + pool.value, 0) > 0 
-                ? formatCurrency(pools.reduce((sum, pool) => sum + pool.value, 0))
-                : '$0.00'
-              }
-            </div>
-            <div className="text-sm text-gray-400">
-              {pools.filter(pool => pool.value > 0).length} active positions
-            </div>
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Token Balances */}
-      <div className="bg-[#1a1b1f] rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-6">Token Balances</h3>
-        {tokens.length > 0 ? (
+          <h2 className="text-xl font-semibold text-white mb-6">Assets</h2>
           <div className="space-y-4">
-            {tokens.map((token, index) => (
-              <motion.div
-                key={token.symbol}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="flex items-center justify-between p-4 bg-[#212226] rounded-lg"
-              >
+            {tokens.map((token) => (
+              <div key={token.symbol} className="flex items-center justify-between p-4 bg-[#23262F] rounded-xl">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">{token.symbol.slice(0, 2)}</span>
-                  </div>
+                  <img src={`/icons/${token.symbol.toLowerCase()}.svg`} alt={token.symbol} className="w-10 h-10 rounded-full" />
                   <div>
                     <div className="font-medium text-white">{token.symbol}</div>
                     <div className="text-sm text-gray-400">
-                      {formatAmount(token.balance, token.decimals)} {token.symbol}
+                      {(parseFloat(token.balance) / Math.pow(10, token.decimals)).toFixed(6)} {token.symbol}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-white font-medium">
-                    {formatCurrency(token.value)}
-                  </div>
-                  <div className={`text-sm ${
-                    token.change24h >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {token.change24h >= 0 ? '+' : ''}{token.change24h.toFixed(2)}%
+                  <div className="font-medium text-white">
+                    ${token.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
           </div>
-        ) : (
-          <div className="text-center py-8">
-            <div className="text-gray-400 mb-4">No tokens found</div>
-            <button
-              onClick={requestFaucet}
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-            >
-              Get Testnet Tokens
-            </button>
-          </div>
-        )}
-      </div>
+        </motion.div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
+        {/* Recent Transactions */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-[#1A1B1F] rounded-2xl p-6"
+        >
+          <h2 className="text-xl font-semibold text-white mb-6">Recent Transactions</h2>
+          <div className="space-y-4">
+            {transactions.map((tx) => (
+              <div key={tx.hash} className="flex items-center justify-between p-4 bg-[#23262F] rounded-xl">
+                <div className="flex items-center gap-4">
+                  {tx.type === 'swap' ? (
+                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <ArrowTrendingUpIcon className="w-6 h-6 text-blue-400" />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <CurrencyDollarIcon className="w-6 h-6 text-green-400" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="font-medium text-white capitalize">{tx.type}</div>
+                    <div className="text-sm text-gray-400">
+                      {tx.amount} {tx.token}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-400">
+                    {new Date(tx.timestamp).toLocaleString()}
+                  </div>
+                  <div className={`text-sm ${
+                    tx.status === 'completed' ? 'text-green-400' : 
+                    tx.status === 'pending' ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {tx.status}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 };

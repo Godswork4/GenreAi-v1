@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { generateCodeVerifier, generateCodeChallenge } from '../utils/pkce';
-import { ENV_CONFIG } from '../config/environment';
+import { FUTUREPASS_CONFIG } from '../config/futurepass.config';
 
 interface AuthResponse {
   token: string;
@@ -32,15 +32,26 @@ class FuturePassService {
       sessionStorage.setItem('nonce', this.nonce);
       
       // Build authorization URL
-      const authUrl = new URL(`${ENV_CONFIG.FUTUREPASS_API_URL}/auth`);
-      authUrl.searchParams.set('client_id', ENV_CONFIG.FUTURE_PASS_CLIENT_ID);
-      authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('scope', 'openid profile email futurepass:read');
-      authUrl.searchParams.set('redirect_uri', `${window.location.origin}/auth/callback`);
-      authUrl.searchParams.set('state', state);
-      authUrl.searchParams.set('code_challenge', codeChallenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
-      authUrl.searchParams.set('nonce', this.nonce);
+      const authUrl = new URL(`${FUTUREPASS_CONFIG.API_URL}/oauth/authorize`);
+      
+      // Add all required parameters
+      const params = {
+        client_id: FUTUREPASS_CONFIG.CLIENT_ID,
+        response_type: 'code',
+        scope: FUTUREPASS_CONFIG.AUTH_CONFIG.scope,
+        redirect_uri: FUTUREPASS_CONFIG.AUTH_CONFIG.redirect_uri,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        nonce: this.nonce
+      };
+
+      // Add parameters to URL
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) {
+          authUrl.searchParams.set(key, value);
+        }
+      });
       
       console.log('Redirecting to:', authUrl.toString());
       
@@ -48,7 +59,7 @@ class FuturePassService {
       window.location.href = authUrl.toString();
     } catch (error) {
       console.error('FuturePass login error:', error);
-      throw error;
+      throw new Error('Failed to initialize login. Please try again.');
     }
   }
 
@@ -58,58 +69,52 @@ class FuturePassService {
       const storedState = sessionStorage.getItem('auth_state');
       const storedCodeVerifier = sessionStorage.getItem('code_verifier');
       
-      if (state !== storedState) {
-        throw new Error('Invalid state parameter - possible CSRF attack');
+      if (!storedState || !storedCodeVerifier) {
+        throw new Error('Missing authentication state. Please try logging in again.');
       }
 
-      if (!storedCodeVerifier) {
-        throw new Error('Missing PKCE code verifier');
+      if (state !== storedState) {
+        throw new Error('Invalid state parameter - possible security issue. Please try again.');
       }
 
       console.log('Exchanging code for token...');
 
       // Exchange code for token
-      const tokenResponse = await axios.post(`${ENV_CONFIG.FUTUREPASS_API_URL}/oauth/token`, {
+      const tokenResponse = await axios.post(`${FUTUREPASS_CONFIG.API_URL}/oauth/token`, {
         grant_type: 'authorization_code',
-        client_id: ENV_CONFIG.FUTURE_PASS_CLIENT_ID,
+        client_id: FUTUREPASS_CONFIG.CLIENT_ID,
         code,
-        redirect_uri: `${window.location.origin}/auth/callback`,
+        redirect_uri: FUTUREPASS_CONFIG.AUTH_CONFIG.redirect_uri,
         code_verifier: storedCodeVerifier
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
       });
-
-      console.log('Token response:', tokenResponse.data);
 
       const { access_token } = tokenResponse.data;
 
       if (!access_token) {
-        throw new Error('No access token received');
+        throw new Error('No access token received from server.');
       }
 
+      // Store the token
+      localStorage.setItem('auth_token', access_token);
+
       // Get user info
-      const userResponse = await axios.get(`${ENV_CONFIG.FUTUREPASS_API_URL}/oauth/userinfo`, {
+      const userResponse = await axios.get(`${FUTUREPASS_CONFIG.API_URL}/oauth/userinfo`, {
         headers: {
-          Authorization: `Bearer ${access_token}`,
-          'Accept': 'application/json'
+          Authorization: `Bearer ${access_token}`
         }
       });
-
-      console.log('User response:', userResponse.data);
 
       // Clear session storage
       sessionStorage.removeItem('auth_state');
       sessionStorage.removeItem('code_verifier');
       sessionStorage.removeItem('nonce');
 
+      const userInfo = userResponse.data;
       return {
         token: access_token,
         user: {
-          email: userResponse.data.email,
-          address: userResponse.data.futurepass || userResponse.data.wallet || userResponse.data.sub
+          email: userInfo.email,
+          address: userInfo.futurepass || userInfo.wallet || userInfo.sub
         }
       };
     } catch (error) {
@@ -128,14 +133,20 @@ class FuturePassService {
 
   static async logout() {
     try {
+      const token = localStorage.getItem('auth_token');
+      
       // Clear any stored tokens
       localStorage.removeItem('auth_token');
       sessionStorage.clear();
       
       // Build logout URL
-      const logoutUrl = new URL(`${ENV_CONFIG.FUTUREPASS_API_URL}/logout`);
-      logoutUrl.searchParams.set('client_id', ENV_CONFIG.FUTURE_PASS_CLIENT_ID);
-      logoutUrl.searchParams.set('post_logout_redirect_uri', window.location.origin);
+      const logoutUrl = new URL(`${FUTUREPASS_CONFIG.API_URL}/oauth/logout`);
+      logoutUrl.searchParams.set('client_id', FUTUREPASS_CONFIG.CLIENT_ID);
+      logoutUrl.searchParams.set('post_logout_redirect_uri', FUTUREPASS_CONFIG.POST_LOGOUT_URLS[0]);
+      
+      if (token) {
+        logoutUrl.searchParams.set('id_token_hint', token);
+      }
       
       window.location.href = logoutUrl.toString();
     } catch (error) {
@@ -152,7 +163,7 @@ class FuturePassService {
       const token = localStorage.getItem('auth_token');
       if (!token) return null;
       
-      const response = await axios.get(`${ENV_CONFIG.FUTUREPASS_API_URL}/oauth/userinfo`, {
+      const response = await axios.get(`${FUTUREPASS_CONFIG.API_URL}/oauth/userinfo`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Accept': 'application/json'
@@ -172,7 +183,7 @@ class FuturePassService {
       if (!token) return false;
       
       // Verify token is still valid
-      const response = await axios.get(`${ENV_CONFIG.FUTUREPASS_API_URL}/oauth/userinfo`, {
+      const response = await axios.get(`${FUTUREPASS_CONFIG.API_URL}/oauth/userinfo`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Accept': 'application/json'

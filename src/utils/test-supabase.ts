@@ -1,22 +1,39 @@
-import { supabase } from '../lib/supabase';
+import { supabase, testSupabaseConnection } from '../lib/supabase';
 
-export const testSupabaseConnection = async () => {
+// Re-export the test function for backward compatibility
+export { testSupabaseConnection };
+
+// Additional test for table access if needed
+export const testWaitlistAccess = async () => {
   try {
-    // Test the connection by attempting to read the waitlist table
     const { data, error } = await supabase
       .from('waitlist')
       .select('id')
       .limit(1);
 
     if (error) {
-      console.error('Supabase connection test failed:', error.message);
+      console.error('Failed to query waitlist table:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       return false;
     }
 
-    console.log('Supabase connection test successful!');
+    console.log('Waitlist query successful!');
+    console.log('Sample data:', data);
     return true;
   } catch (error) {
-    console.error('Supabase connection test failed:', error);
+    console.error('Waitlist query test failed with exception:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+    }
     return false;
   }
 }; 

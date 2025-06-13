@@ -1,47 +1,36 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { DemoWalletService } from '../services/demoWalletService';
+import { demoWalletService } from '../services/demoWalletService';
 
 interface DemoStore {
   isDemoMode: boolean;
   demoWallet: {
-    address: string;
-    privateKey: string;
+    evmAddress: string | null;
+    polkadotAddress: string | null;
   } | null;
-  setDemoMode: (isDemo: boolean) => Promise<void>;
-  createDemoWallet: () => Promise<void>;
+  setDemoMode: (isDemo: boolean) => void;
 }
 
 export const useDemoStore = create<DemoStore>()(
   devtools(
-    (set, get) => ({
+    (set) => ({
       isDemoMode: false,
       demoWallet: null,
       
-      setDemoMode: async (isDemo) => {
-        if (isDemo && !get().demoWallet) {
-          await get().createDemoWallet();
-        }
-        if (!isDemo) {
-          await DemoWalletService.disconnect();
-          set({ demoWallet: null });
-        }
-        set({ isDemoMode: isDemo });
-      },
-      
-      createDemoWallet: async () => {
-        try {
-          await DemoWalletService.initialize();
-          const wallet = await DemoWalletService.getWallet();
+      setDemoMode: (isDemo) => {
+        if (isDemo) {
           set({
+            isDemoMode: true,
             demoWallet: {
-              address: wallet.address,
-              privateKey: wallet.privateKey
+              evmAddress: demoWalletService.getAddress(),
+              polkadotAddress: demoWalletService.getPolkadotAddress()
             }
           });
-        } catch (error) {
-          console.error('Failed to create demo wallet:', error);
-          throw error;
+        } else {
+          set({
+            isDemoMode: false,
+            demoWallet: null
+          });
         }
       }
     })

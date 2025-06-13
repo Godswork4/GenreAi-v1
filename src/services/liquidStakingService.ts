@@ -1,147 +1,176 @@
-import { ApiPromise } from '@polkadot/api';
-import { TRNService } from './trnService';
+import { ApiPromise, WsProvider } from '@polkadot/api';
+import { demoWalletService } from './demoWalletService';
+import { ENV_CONFIG } from '../config/environment';
+import { BN } from '@polkadot/util';
 import { web3FromAddress } from '@polkadot/extension-dapp';
-import { parseUnits, formatUnits } from 'ethers';
+import { ethers } from "ethers";
 
-export interface StakingPosition {
-  amount: string;
-  unlockTime: number;
-  rewards: string;
-}
+const MINIMUM_STAKE = new BN('25000000000000000000'); // 25 ROOT in Wei
 
-interface ValidatorInfo {
-  address: string;
-  commission: number;
-  totalStake: string;
-  apy: number;
-}
+class StakingService {
+  private static api: ApiPromise | null = null;
 
-export class LiquidStakingService {
-  /**
-   * Initialize staking pool for ROOT tokens
-   */
-  static async initializeStakingPool(
-    adminAddress: string,
-    initialExchangeRate: string,
-    minStakeAmount: string
-  ): Promise<string> {
-    try {
-      // For demo purposes, return a mock transaction hash
-      return 'demo-init-pool-' + Date.now();
-    } catch (error) {
-      console.error('Error initializing staking pool:', error);
-      throw error;
+  private static async getApi(): Promise<ApiPromise> {
+    if (!this.api) {
+      const wsProvider = new WsProvider(ENV_CONFIG.ROOT_NETWORK_RPC_URL);
+      this.api = await ApiPromise.create({ provider: wsProvider });
     }
+    return this.api;
   }
 
-  /**
-   * Stake ROOT tokens and receive liquid staking tokens
-   */
-  static async stake(address: string, amount: string): Promise<string> {
+  public static async stake(amount: string): Promise<string> {
     try {
-      // For demo purposes, return a mock transaction hash
-      return 'demo-stake-' + Date.now();
-    } catch (error) {
-      console.error('Error staking tokens:', error);
-      throw error;
-    }
-  }
+      const api = await this.getApi();
+      const amountBN = new BN(amount);
 
-  /**
-   * Unstake liquid staking tokens and receive ROOT tokens
-   */
-  static async unstake(address: string, amount: string): Promise<string> {
-    try {
-      // For demo purposes, return a mock transaction hash
-      return 'demo-unstake-' + Date.now();
-    } catch (error) {
-      console.error('Error unstaking tokens:', error);
-      throw error;
-    }
-  }
+      if (amountBN.lt(MINIMUM_STAKE)) {
+        throw new Error('Minimum staking amount is 25 ROOT');
+      }
 
-  /**
-   * Claim staking rewards
-   */
-  static async claimRewards(address: string): Promise<string> {
-    try {
-      // For demo purposes, return a mock transaction hash
-      return 'demo-claim-' + Date.now();
-    } catch (error) {
-      console.error('Error claiming rewards:', error);
-      throw error;
-    }
-  }
+      // Get the demo account
+      const account = demoWalletService.getPolkadotAccount();
+      if (!account) {
+        throw new Error('Demo wallet not initialized');
+      }
 
-  /**
-   * Get user's staking position
-   */
-  static async getStakingPosition(address: string): Promise<StakingPosition> {
-    try {
-      // Return demo staking position
-      return {
-        amount: '100000000000000000000', // 100 tokens
-        unlockTime: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days from now
-        rewards: '5000000000000000000' // 5 tokens in rewards
-      };
-    } catch (error) {
-      console.error('Error getting staking position:', error);
-      return {
-        amount: '0',
-        unlockTime: 0,
-        rewards: '0'
-      };
-    }
-  }
-
-  /**
-   * Get pool statistics
-   */
-  static async getPoolStats(): Promise<{
-    totalStaked: string;
-    exchangeRate: string;
-    apy: number;
-  }> {
-    try {
-      // Return demo pool stats
-      return {
-        totalStaked: '1000000000000000000000000', // 1M tokens
-        exchangeRate: '1000000000000000000', // 1:1 for liquid staking tokens
-        apy: 12 // 12% APY
-      };
-    } catch (error) {
-      console.error('Error getting pool stats:', error);
-      return {
-        totalStaked: '0',
-        exchangeRate: '1000000000000000000',
-        apy: 0
-      };
-    }
-  }
-
-  /**
-   * Get list of active validators
-   */
-  static async getValidators(): Promise<ValidatorInfo[]> {
-    try {
-      // Return demo validators
-      return [
-        {
-          address: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-          commission: 5,
-          totalStake: '500000000000000000000000',
-          apy: 12
-        },
-        {
-          address: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
-          commission: 3,
-          totalStake: '300000000000000000000000',
-          apy: 14
+      const injector = await web3FromAddress(account.address);
+      const tx = api.tx.staking.bond(amountBN.toString(), 'Staked');
+      const unsub = await tx.signAndSend(account, { signer: injector.signer }, ({ status, dispatchError, txHash }) => {
+        if (status.isInBlock || status.isFinalized) {
+          // Transaction is in block or finalized
+          unsub(); // Unsubscribe from updates
+          return txHash.toString();
         }
-      ];
+        if (dispatchError) {
+          // Handle error
+          unsub();
+          throw new Error('Transaction failed');
+        }
+      });
+    } catch (error) {
+      console.error('Staking error:', error);
+      throw error;
+    }
+  }
+
+  public static async unstake(amount: string): Promise<string> {
+    try {
+      const api = await this.getApi();
+      const account = demoWalletService.getPolkadotAccount();
+      if (!account) {
+        throw new Error('Demo wallet not initialized');
+      }
+
+      const tx = api.tx.staking.unbond(amount);
+      const hash = await tx.signAndSend(account);
+      return hash.toString();
+    } catch (error) {
+      console.error('Unstaking error:', error);
+      throw error;
+    }
+  }
+
+  public static async getStakingInfo(address: string) {
+    try {
+      const api = await this.getApi();
+      
+      // Get staking ledger
+      const stakingLedger = await api.query.staking.ledger(address);
+      
+      // Get validator info if the address is nominating
+      const nominators = await api.query.staking.nominators(address);
+      
+      // Get current era reward points
+      const eraStakers = await api.query.staking.erasStakers(await api.query.staking.activeEra(), address);
+
+      return {
+        stakingLedger: stakingLedger.toJSON(),
+        isNominating: !nominators.isEmpty,
+        nominatedValidators: nominators.isEmpty ? [] : nominators.toJSON(),
+        eraStakers: eraStakers.toJSON()
+      };
+    } catch (error) {
+      console.error('Error getting staking info:', error);
+      throw error;
+    }
+  }
+
+  public static async getValidators() {
+    try {
+      const api = await this.getApi();
+      
+      // Get current validators
+      const validators = await api.query.session.validators();
+      
+      // Get validator preferences
+      const validatorPrefs = await Promise.all(
+        validators.map(validator => 
+          api.query.staking.validators(validator)
+        )
+      );
+
+      return validators.map((validator, index) => ({
+        address: validator.toString(),
+        prefs: validatorPrefs[index].toJSON()
+      }));
     } catch (error) {
       console.error('Error getting validators:', error);
-      return [];
+      throw error;
+    }
+  }
+
+  public static async nominate(validatorAddresses: string[]): Promise<string> {
+    try {
+      const api = await this.getApi();
+      const account = demoWalletService.getPolkadotAccount();
+      if (!account) {
+        throw new Error('Demo wallet not initialized');
+      }
+
+      const tx = api.tx.staking.nominate(validatorAddresses);
+      const hash = await tx.signAndSend(account);
+      return hash.toString();
+    } catch (error) {
+      console.error('Nomination error:', error);
+      throw error;
+    }
+  }
+
+  public static async claimRewards(): Promise<string> {
+    try {
+      const api = await this.getApi();
+      const account = demoWalletService.getPolkadotAccount();
+      if (!account) {
+        throw new Error('Demo wallet not initialized');
+      }
+
+      const tx = api.tx.staking.payoutStakers(account.address, await api.query.staking.activeEra());
+      const hash = await tx.signAndSend(account);
+      return hash.toString();
+    } catch (error) {
+      console.error('Reward claim error:', error);
+      throw error;
+    }
+  }
+
+  public static async swapTokens(amountIn: string, amountOutMin: string, path: string[], to: string, deadline: string): Promise<string> {
+    try {
+      const api = await this.getApi();
+      const account = demoWalletService.getPolkadotAccount();
+      if (!account) {
+        throw new Error('Demo wallet not initialized');
+      }
+
+      const contract = new ethers.Contract(DEX_ADDRESS, DEX_ABI, signer);
+      const tx = await contract.swapExactTokensForTokens(amountIn, amountOutMin, path, to, deadline);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Swap error:', error);
+      throw error;
     }
   }
 }
+
+export { StakingService };

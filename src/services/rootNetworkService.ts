@@ -3,6 +3,11 @@ import { Keyring } from '@polkadot/keyring';
 import { cryptoWaitReady } from '@polkadot/util-crypto';
 import { BN } from '@polkadot/util';
 import type { InjectedAccountWithMeta } from '@polkadot/extension-inject/types';
+import { web3FromAddress } from '@polkadot/extension-dapp';
+import { ENV_CONFIG } from '../config/environment';
+import type { Option, Vec } from '@polkadot/types';
+import type { Codec } from '@polkadot/types/types';
+import type { PalletDexPool } from '@polkadot/types/lookup';
 
 const ROOT_NETWORK_RPC = 'wss://porcini.rootnet.app';
 const FAUCET_URL = 'https://faucet.rootnet.live';
@@ -11,6 +16,11 @@ interface TokenInfo {
   symbol: string;
   decimals: number;
   assetId: number;
+}
+
+interface DexReserves {
+  reserve0: BN;
+  reserve1: BN;
 }
 
 interface PoolInfo {
@@ -66,9 +76,10 @@ export class RootNetworkService {
 
   static async getApi(): Promise<ApiPromise> {
     if (!this.api) {
-      await this.initialize();
+      const provider = new WsProvider(ROOT_NETWORK_RPC);
+      this.api = await ApiPromise.create({ provider });
     }
-    return this.api!;
+    return this.api;
   }
 
   static async createWallet(): Promise<{ address: string; mnemonic: string }> {
@@ -113,13 +124,20 @@ export class RootNetworkService {
 
   static async getTokenBalances(address: string): Promise<Record<string, string>> {
     try {
+      const api = await this.getApi();
       const balances: Record<string, string> = {};
       
-      for (const [assetId, token] of Object.entries(this.TOKENS)) {
-        const balance = await this.getBalance(address, parseInt(assetId));
-        balances[token.symbol] = balance;
-      }
-      
+      // Get ROOT balance
+      const { data: { free: rootBalance } } = await api.query.system.account(address);
+      balances['ROOT'] = rootBalance.toString();
+
+      // Get other token balances
+      const tokenBalances = await api.query.tokens.accounts.entries(address);
+      tokenBalances.forEach(([key, balance]) => {
+        const assetId = key.args[1].toString();
+        balances[assetId] = balance.free.toString();
+      });
+
       return balances;
     } catch (error) {
       console.error('Error fetching token balances:', error);
@@ -163,15 +181,23 @@ export class RootNetworkService {
     try {
       const api = await this.getApi();
       
-      const result = await api.call.dexApi.getAmountOutByPath(
+      // Get pool info
+      const pool = await api.query.dex.pools([assetIdIn, assetIdOut]);
+      if (!pool.isSome) {
+        throw new Error('Pool not found');
+      }
+
+      // Calculate amount out using AMM formula
+      const result = await api.rpc.dex.getAmountOut(
         new BN(amountIn),
-        [assetIdIn, assetIdOut]
+        assetIdIn,
+        assetIdOut
       );
       
       return result.toString();
     } catch (error) {
       console.error('Error calculating swap amount:', error);
-      return '0';
+      throw error;
     }
   }
 
@@ -180,25 +206,25 @@ export class RootNetworkService {
     amountIn: string,
     amountOutMin: string,
     assetIdIn: number,
-    assetIdOut: number,
-    deadline?: number
+    assetIdOut: number
   ): Promise<string> {
     try {
       const api = await this.getApi();
-      const deadlineBlock = deadline || (await api.query.system.number()).toNumber() + 100;
       
+      // Create swap transaction
       const tx = api.tx.dex.swapExactTokensForTokens(
         new BN(amountIn),
         new BN(amountOutMin),
         [assetIdIn, assetIdOut],
         signer,
-        deadlineBlock
+        await api.query.system.number().then(n => n.toNumber() + 100) // Deadline: current block + 100
       );
 
-      // For demo purposes, we'll simulate the transaction
-      // In production, you'd use the actual signer
-      const txHash = await this.simulateTransaction(tx);
-      return txHash;
+      // Sign and send transaction
+      const injector = await web3FromAddress(signer);
+      const result = await tx.signAndSend(signer, { signer: injector.signer });
+      
+      return result.toString();
     } catch (error) {
       console.error('Error executing swap:', error);
       throw error;
@@ -279,15 +305,25 @@ export class RootNetworkService {
   static async stake(signer: string, amount: string): Promise<string> {
     try {
       const api = await this.getApi();
-      
       const tx = api.tx.staking.bond(
-        signer, // controller
         new BN(amount),
         'Staked' // reward destination
       );
-
-      const txHash = await this.simulateTransaction(tx);
-      return txHash;
+      const injector = await web3FromAddress(signer);
+      return await new Promise((resolve, reject) => {
+        tx.signAndSend(signer, { signer: injector.signer }, ({ status, dispatchError, txHash }) => {
+          if (dispatchError) {
+            let message = dispatchError.toString();
+            if (dispatchError.isModule && api.registry) {
+              const decoded = api.registry.findMetaError(dispatchError.asModule);
+              message = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+            }
+            reject(new Error(message));
+          } else if (status.isInBlock || status.isFinalized) {
+            resolve(txHash.toString());
+          }
+        });
+      });
     } catch (error) {
       console.error('Error staking:', error);
       throw error;
@@ -328,6 +364,79 @@ export class RootNetworkService {
     if (this.api) {
       await this.api.disconnect();
       this.api = null;
+    }
+  }
+
+  static async getPools(): Promise<any[]> {
+    try {
+      const api = await this.getApi();
+      const pools = await api.query.dex.pools.entries();
+      
+      return pools.map(([key, pool]) => ({
+        assetIds: key.args[0].toJSON(),
+        data: pool.toJSON()
+      }));
+    } catch (error) {
+      console.error('Error fetching pools:', error);
+      return [];
+    }
+  }
+
+  static async getPoolLiquidity(assetIdA: number, assetIdB: number): Promise<{ reserve0: string; reserve1: string }> {
+    try {
+      const api = await this.getApi();
+      const pool = await api.query.dex.pools([assetIdA, assetIdB]);
+      
+      if (!pool.isSome) {
+        return { reserve0: '0', reserve1: '0' };
+      }
+
+      const { token0Reserve, token1Reserve } = pool.unwrap();
+      return {
+        reserve0: token0Reserve.toString(),
+        reserve1: token1Reserve.toString()
+      };
+    } catch (error) {
+      console.error('Error fetching pool liquidity:', error);
+      return { reserve0: '0', reserve1: '0' };
+    }
+  }
+
+  static async getSwapEstimate(
+    amountIn: string,
+    assetIdIn: number,
+    assetIdOut: number
+  ): Promise<{ amountOut: string; priceImpact: number }> {
+    try {
+      const api = await this.getApi();
+      
+      // Get pool info
+      const poolInfo = (await api.query.dex.pools([assetIdIn, assetIdOut])) as unknown as Option<Codec>;
+      if (!poolInfo || poolInfo.isEmpty) {
+        throw new Error('Pool not found');
+      }
+
+      // Parse pool data - assuming the structure matches DexReserves
+      const poolData = poolInfo.value.toJSON() as unknown as DexReserves;
+      const reserveIn = new BN(poolData.reserve0);
+      const reserveOut = new BN(poolData.reserve1);
+
+      // Calculate amount out using constant product formula (x * y = k)
+      const amountWithFee = new BN(amountIn).muln(997); // 0.3% fee
+      const numerator = amountWithFee.mul(reserveOut);
+      const denominator = reserveIn.muln(1000).add(amountWithFee);
+      const amountOut = numerator.div(denominator);
+
+      // Calculate price impact
+      const priceImpact = parseFloat(amountIn) / (parseFloat(reserveIn.toString()) + parseFloat(amountIn)) * 100;
+
+      return {
+        amountOut: amountOut.toString(),
+        priceImpact
+      };
+    } catch (error) {
+      console.error('Error calculating swap estimate:', error);
+      throw error;
     }
   }
 }

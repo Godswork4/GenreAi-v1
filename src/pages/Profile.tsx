@@ -15,7 +15,8 @@ import {
   BeakerIcon,
   ArrowTopRightOnSquareIcon,
   GlobeAltIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  ClipboardIcon
 } from '@heroicons/react/24/outline';
 
 const Profile: React.FC = () => {
@@ -28,7 +29,7 @@ const Profile: React.FC = () => {
     isValid: false
   });
 
-  const activeAddress = isDemoMode ? demoWallet?.address : user?.futurePassAddress;
+  const activeAddress = isDemoMode ? demoWallet?.evmAddress : user?.futurePassAddress;
 
   useEffect(() => {
     if (activeAddress) {
@@ -94,35 +95,6 @@ const Profile: React.FC = () => {
       icon: WalletIcon,
       content: (
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg">
-            <div className="flex-1">
-              <p className="text-sm text-gray-400 mb-1">Wallet Address</p>
-              <p className="font-mono text-white text-sm break-all">
-                {activeAddress || 'Not connected'}
-              </p>
-            </div>
-            <div className="flex gap-2 ml-4">
-              <button
-                onClick={copyAddress}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                title="Copy address"
-              >
-                {copied ? (
-                  <CheckIcon className="w-5 h-5 text-green-500" />
-                ) : (
-                  <DocumentDuplicateIcon className="w-5 h-5 text-gray-400" />
-                )}
-              </button>
-              <button
-                onClick={openExplorer}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                title="View on explorer"
-              >
-                <ArrowTopRightOnSquareIcon className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-gray-800/50 rounded-lg">
               <div className="text-sm text-gray-400 mb-1">Wallet Type</div>
@@ -149,7 +121,7 @@ const Profile: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+          <div className="p-4 bg-gray-800/50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <GlobeAltIcon className="w-5 h-5 text-blue-400" />
               <h3 className="font-medium text-white">Root Network Testnet</h3>
@@ -171,13 +143,15 @@ const Profile: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={openFaucet}
+            <a
+              href="https://faucet.rootnet.cloud"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 p-3 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors"
             >
               <BeakerIcon className="w-4 h-4" />
               <span className="text-sm">Get Testnet Tokens</span>
-            </button>
+            </a>
             <button
               onClick={openExplorer}
               className="flex items-center justify-center gap-2 p-3 bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 rounded-lg transition-colors"
@@ -190,11 +164,24 @@ const Profile: React.FC = () => {
           {isDemoMode && (
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
               <p className="text-sm text-yellow-400">
-                <strong>Demo Mode:</strong> This is a testnet wallet created specifically for demonstration. 
-                Your wallet is unique and stored locally. Use the faucet to get testnet tokens for testing.
+                Use the faucet to get testnet tokens for testing.
               </p>
             </div>
           )}
+
+          {/* Wallet Address Display */}
+          <div className="flex items-center gap-2 mt-2">
+            <span className="font-mono text-xs text-gray-300 bg-gray-800/50 px-2 py-1 rounded">
+              {activeAddress ? activeAddress : 'No address'}
+            </span>
+            <button
+              onClick={copyAddress}
+              className="hover:text-blue-400"
+              title="Copy address"
+            >
+              {copied ? <CheckIcon className="w-4 h-4" /> : <ClipboardIcon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       )
     },

@@ -3,13 +3,51 @@
   "name": "AI DeFi Copilot",
   "version": "1.0.0",
   "description": "AI-powered DeFi trading assistant",
-  "web_accessible_resources": [{
-    "resources": [
-      "src/assets/*.svg",
-      "src/assets/root-icon.svg",
-      "src/assets/xrp-icon.svg",
-      "src/assets/asto-icon.svg"
-    ],
-    "matches": ["<all_urls>"]
-  }]
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/extension/inpage/index.js",
+        "src/extension/inpage/*.js",
+        "src/extension/inject.js",
+        "src/lib/*.js",
+        "src/lib/*.wasm",
+        "src/services/*.js",
+        "src/assets/*",
+        "index.html",
+        "*.js",
+        "*.wasm",
+        "*.json"
+      ],
+      "matches": [
+        "http://localhost:3000/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "https://*/*"
+      ],
+      "js": ["src/extension/inject.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://*/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+    "sandbox": "allow-scripts allow-forms allow-popups allow-modals"
+  },
+  "background": {
+    "service_worker": "src/extension/background.js",
+    "type": "module"
+  }
 } 

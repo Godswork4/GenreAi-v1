@@ -7,19 +7,19 @@
  * @param length Number of bytes to generate
  * @returns Uint8Array of random bytes
  */
-export function getRandomBytes(length: number): Uint8Array {
+export const generateRandomBytes = (length: number): Uint8Array => {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   return bytes;
-}
+};
 
 /**
  * Generate a random UUID using the Web Crypto API
  * @returns Random UUID string
  */
-export function generateUUID(): string {
+export const generateUUID = (): string => {
   return crypto.randomUUID();
-}
+};
 
 /**
  * Convert bytes to hex string
@@ -59,7 +59,7 @@ export function getRandomNumber(min: number, max: number): number {
   const cutoff = maxNum - (maxNum % range);
   
   while (true) {
-    const bytes = getRandomBytes(bytesNeeded);
+    const bytes = generateRandomBytes(bytesNeeded);
     let num = 0;
     for (let i = 0; i < bytesNeeded; i++) {
       num = (num << 8) | bytes[i];
@@ -76,26 +76,15 @@ export class CryptoUtils {
    * Generate a cryptographically secure random string
    */
   static generateSecureRandom(length: number = 32): string {
-    const bytes = randomBytes(length);
-    return bytes.toString('hex');
+    const bytes = generateRandomBytes(length);
+    return bytesToHex(bytes);
   }
 
   /**
    * Generate a secure random UUID v4
    */
   static generateUUID(): string {
-    const bytes = randomBytes(16);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
-    bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant bits
-    
-    const hex = bytes.toString('hex');
-    return [
-      hex.slice(0, 8),
-      hex.slice(8, 12),
-      hex.slice(12, 16),
-      hex.slice(16, 20),
-      hex.slice(20, 32)
-    ].join('-');
+    return generateUUID();
   }
 
   /**
@@ -130,8 +119,6 @@ export class CryptoUtils {
    * Generate a secure session token
    */
   static generateSessionToken(): string {
-    const timestamp = Date.now().toString();
-    const random = this.generateSecureRandom(32);
     return this.generateSecureRandom(64);
   }
 
@@ -200,21 +187,28 @@ export class CryptoUtils {
 }
 
 // Initialize crypto utilities
-export async function initializeCrypto(): Promise<void> {
+export const initializeCrypto = async (): Promise<void> => {
   try {
-    // Test crypto functionality
-    const testData = 'test-data';
-    const hash = await CryptoUtils.sha256(testData);
-    const uuid = CryptoUtils.generateUUID();
-    
-    console.log('Crypto utilities initialized successfully');
-    console.log('Test hash:', hash.slice(0, 16) + '...');
-    console.log('Test UUID:', uuid);
+    // Test if crypto API is available
+    if (!crypto || !crypto.subtle) {
+      throw new Error('Web Crypto API is not available');
+    }
+
+    // Test basic crypto operations
+    const testBytes = generateRandomBytes(32);
+    const testHex = getRandomHex(32);
+    const testUUID = generateUUID();
+
+    console.log('Crypto utilities initialized successfully', {
+      randomBytesAvailable: testBytes.length === 32,
+      hexGenerated: testHex.length === 32,
+      uuidGenerated: testUUID.length === 36
+    });
   } catch (error) {
     console.error('Failed to initialize crypto utilities:', error);
     throw error;
   }
-}
+};
 
 // Export default crypto instance
 export default CryptoUtils;

@@ -3,7 +3,7 @@ import { SVGProps } from 'react';
 // Import SVGs as React components
 const RootIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <circle cx="16" cy="16" r="16" fill="#23292F"/>
+    <rect width="32" height="32" rx="16" fill="#1A1B1F"/>
     <path d="M10 22V10h12l-6 6-6 6z" fill="white"/>
   </svg>
 );

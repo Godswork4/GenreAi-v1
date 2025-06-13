@@ -1,102 +1,90 @@
+import { HDNodeWallet } from 'ethers';
 import { Keyring } from '@polkadot/keyring';
-import { cryptoWaitReady, randomAsU8a } from '@polkadot/util-crypto';
+import { mnemonicToMiniSecret, cryptoWaitReady } from '@polkadot/util-crypto';
 
-interface DemoWallet {
-  address: string;
-  privateKey: string;
-}
+const DEMO_MNEMONIC = 'deal rival shrimp damp smooth fit soup umbrella marble nasty win desk brisk other elephant bunker cereal fog casual student online any midnight absent';
 
-export class DemoWalletService {
-  private static wallet: DemoWallet | null = null;
-  private static keyring: Keyring | null = null;
-  private static isInitializing = false;
+class DemoWalletService {
+  private static instance: DemoWalletService;
+  private wallet: HDNodeWallet | null = null;
+  private polkadotAccount: any = null;
+  private isInitialized = false;
 
-  static async initialize(): Promise<void> {
-    if (this.wallet || this.isInitializing) return;
+  private constructor() {
+    // Don't initialize in constructor, wait for explicit initialization
+  }
+
+  public static getInstance(): DemoWalletService {
+    if (!DemoWalletService.instance) {
+      DemoWalletService.instance = new DemoWalletService();
+    }
+    return DemoWalletService.instance;
+  }
+
+  public async initialize() {
+    if (this.isInitialized) {
+      return;
+    }
 
     try {
-      this.isInitializing = true;
-
-      // Wait for crypto to be ready
+      console.log('Initializing demo wallet...');
+      
+      // Wait for WASM to be ready
       await cryptoWaitReady();
-      
-      // Create keyring instance
-      this.keyring = new Keyring({ 
-        type: 'sr25519',
-        ss58Format: 42 // Root Network format
-      });
-      
-      // Generate secure random seed
-      const seed = randomAsU8a(32);
-      
-      // Generate new keypair for demo wallet
-      const keypair = this.keyring.addFromSeed(
-        seed,
-        { name: 'demo' },
-        'sr25519'
-      );
-      
-      this.wallet = {
-        address: keypair.address,
-        privateKey: Buffer.from(seed).toString('hex')
-      };
+      console.log('WASM initialized successfully');
 
-      console.log('Demo wallet initialized:', this.wallet.address);
+      // Initialize EVM wallet
+      this.wallet = HDNodeWallet.fromPhrase(DEMO_MNEMONIC);
+      console.log('EVM wallet initialized');
+
+      // Initialize Polkadot account
+      const keyring = new Keyring({ type: 'sr25519' });
+      this.polkadotAccount = keyring.addFromSeed(
+        mnemonicToMiniSecret(DEMO_MNEMONIC)
+      );
+      console.log('Polkadot account initialized');
+
+      this.isInitialized = true;
+      console.log('Demo wallet initialization complete');
     } catch (error) {
       console.error('Failed to initialize demo wallet:', error);
-      this.disconnect();
+      this.isInitialized = false;
       throw error;
-    } finally {
-      this.isInitializing = false;
     }
   }
 
-  static async getWallet(): Promise<DemoWallet> {
+  private ensureInitialized() {
+    if (!this.isInitialized) {
+      throw new Error('Demo wallet not initialized. Call initialize() first.');
+    }
+  }
+
+  public getAddress(): string | null {
+    this.ensureInitialized();
+    return this.wallet?.address || null;
+  }
+
+  public getPolkadotAddress(): string | null {
+    this.ensureInitialized();
+    return this.polkadotAccount?.address || null;
+  }
+
+  public async signTransaction(transaction: any): Promise<string> {
+    this.ensureInitialized();
     if (!this.wallet) {
-      await this.initialize();
-    }
-    return this.wallet!;
-  }
-
-  static async getBalance(): Promise<string> {
-    // Return demo balance
-    return '1000000000000000000000'; // 1000 tokens
-  }
-
-  static async getTokenBalance(tokenId: string): Promise<string> {
-    // Return demo token balances
-    const balances: Record<string, string> = {
-      trn: '1000000000000000000000', // 1000 TRN
-      root: '500000000000000000000', // 500 ROOT
-      usdt: '10000000000' // 10000 USDT (6 decimals)
-    };
-    
-    return balances[tokenId.toLowerCase()] || '0';
-  }
-
-  static async signTransaction(tx: any): Promise<string> {
-    if (!this.wallet || !this.keyring) {
       throw new Error('Demo wallet not initialized');
     }
+    return await this.wallet.signTransaction(transaction);
+  }
 
-    try {
-      // Simulate transaction signing
-      const txHash = 'demo-tx-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-      return txHash;
-    } catch (error) {
-      console.error('Error signing transaction:', error);
-      throw error;
+  public async signMessage(message: string): Promise<string> {
+    this.ensureInitialized();
+    if (!this.wallet) {
+      throw new Error('Demo wallet not initialized');
     }
-  }
-
-  static async requestTestnetTokens(): Promise<void> {
-    // Simulate requesting testnet tokens
-    console.log('Testnet tokens requested for demo wallet');
-  }
-
-  static async disconnect(): Promise<void> {
-    this.wallet = null;
-    this.keyring = null;
-    this.isInitializing = false;
+    return await this.wallet.signMessage(message);
   }
 }
+
+// Export the singleton instance
+export const demoWalletService = DemoWalletService.getInstance();

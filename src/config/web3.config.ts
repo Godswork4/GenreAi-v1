@@ -1,51 +1,60 @@
-import { createConfig } from '@wagmi/core'
+import { createConfig } from 'wagmi'
 import { http } from 'viem'
-import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { ENV_CONFIG } from './environment'
+import { defineChain } from 'viem'
+import { LocalWalletConnector } from '../services/walletConnector'
 
-// Root Network Configuration
-export const rootNetwork = {
+// Define Root Network chain
+export const rootNetwork = defineChain({
   id: 7672,
-  name: 'Root Network Porcini Testnet',
-  network: 'root-testnet',
+  name: 'The Root Network Testnet',
+  network: 'porcini',
   nativeCurrency: {
     decimals: 18,
-    name: 'XRP',
-    symbol: 'XRP',
+    name: 'ROOT',
+    symbol: 'ROOT',
   },
   rpcUrls: {
     default: {
-      http: ['https://porcini.rootnet.app/archive'],
-      webSocket: [ENV_CONFIG.TRN_RPC_URL]
+      http: ['https://porcini.rootnet.app'],
+      webSocket: ['wss://porcini.rootnet.app/ws'],
     },
     public: {
-      http: ['https://porcini.rootnet.app/archive'],
-      webSocket: [ENV_CONFIG.TRN_RPC_URL]
+      http: ['https://porcini.rootnet.app'],
+      webSocket: ['wss://porcini.rootnet.app/ws'],
     },
   },
   blockExplorers: {
     default: {
       name: 'Root Network Explorer',
-      url: 'https://explorer.rootnet.live',
+      url: 'https://explorer.rootnet.app',
     },
   },
   testnet: true,
-  type: 'evm'
-} as const;
+});
 
-// Export networks array
-export const networks = [rootNetwork] as [typeof rootNetwork, ...typeof rootNetwork[]];
-
-// Create Wagmi Config
-export const config = createConfig({
+// Create wagmi config
+export const wagmiConfig = createConfig({
   chains: [rootNetwork],
+  connectors: [
+    LocalWalletConnector()
+  ],
   transports: {
     [rootNetwork.id]: http()
   }
-})
+});
 
-// Create and export WagmiAdapter
-export const wagmiAdapter = new WagmiAdapter({
-  networks: [rootNetwork],
-  projectId: ENV_CONFIG.WALLET_CONNECT_PROJECT_ID
-})
+// Polkadot and FuturePass configuration
+export const config = {
+  // EVM config
+  wagmi: wagmiConfig,
+  
+  // Polkadot config
+  polkadotEndpoint: 'wss://porcini.rootnet.app/ws',
+  
+  // FuturePass config
+  futurepassAppId: process.env.VITE_FUTUREPASS_APP_ID || '',
+  environment: process.env.VITE_ENVIRONMENT || 'testnet',
+  
+  // Root Network config
+  rootNetwork
+};

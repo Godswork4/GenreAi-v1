@@ -28,12 +28,14 @@ const Login: React.FC = () => {
         )}
 
         <div className="space-y-4">
+          <div className="text-center p-4 bg-gray-700 rounded-lg">
+            <p className="text-white">FuturePass login is coming soon as we are encountering some issues and we are wanting to fix it very soon and we will notify you once fixed but you can use the demo.</p>
+          </div>
           <button
-            onClick={() => login()}
-            disabled={isLoading}
-            className="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            onClick={() => window.location.href = '/app'}
+            className="group relative w-full flex justify-center py-3 px-4 border-2 border-purple-500 rounded-lg text-sm font-medium text-white hover:bg-purple-500/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors"
           >
-            {isLoading ? 'Connecting...' : 'Connect with FuturePass'}
+            Try Demo
           </button>
 
           <div className="relative">

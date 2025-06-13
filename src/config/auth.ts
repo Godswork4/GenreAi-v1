@@ -3,90 +3,56 @@ import { createWagmiConfig } from '@futureverse/auth-react/wagmi';
 import { cookieStorage, createStorage } from 'wagmi';
 import { defineChain } from 'viem';
 import { QueryClient } from '@tanstack/react-query';
-
-// Environment variables
-const clientId = import.meta.env.VITE_FUTURE_PASS_CLIENT_ID;
-const walletConnectProjectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID;
-const futurePassApiUrl = import.meta.env.VITE_FUTUREPASS_API_URL;
-const rootRpcUrl = import.meta.env.VITE_TRN_RPC_URL;
-const rootChainId = Number(import.meta.env.VITE_ROOT_CHAIN_ID);
-
-if (!clientId) {
-  throw new Error('Missing VITE_FUTURE_PASS_CLIENT_ID environment variable');
-}
-
-if (!walletConnectProjectId) {
-  throw new Error('Missing VITE_WALLET_CONNECT_PROJECT_ID environment variable');
-}
-
-if (!futurePassApiUrl) {
-  throw new Error('Missing VITE_FUTUREPASS_API_URL environment variable');
-}
-
-if (!rootRpcUrl) {
-  throw new Error('Missing VITE_TRN_RPC_URL environment variable');
-}
-
-if (!rootChainId) {
-  throw new Error('Missing VITE_ROOT_CHAIN_ID environment variable');
-}
+import { ENV_CONFIG } from './environment';
+import { FUTUREPASS_CONFIG } from './futurepass.config';
+import type { Environment } from '@futureverse/auth-react/auth';
 
 // Define Root Network chain
 export const rootNetwork = defineChain({
-  id: rootChainId,
-  name: 'The Root Network',
-  network: 'root',
+  id: ENV_CONFIG.ROOT_NETWORK_CHAIN_ID,
+  name: 'The Root Network Testnet',
+  network: 'porcini',
   nativeCurrency: {
     decimals: 18,
-    name: 'XRP',
-    symbol: 'XRP',
+    name: 'ROOT',
+    symbol: 'ROOT',
   },
   rpcUrls: {
     default: {
-      http: [rootRpcUrl.replace('wss://', 'https://')],
-      webSocket: [rootRpcUrl],
+      http: ['https://porcini.rootnet.app'],
+      webSocket: [ENV_CONFIG.ROOT_NETWORK_RPC_URL],
     },
     public: {
-      http: [rootRpcUrl.replace('wss://', 'https://')],
-      webSocket: [rootRpcUrl],
+      http: ['https://porcini.rootnet.app'],
+      webSocket: [ENV_CONFIG.ROOT_NETWORK_RPC_URL],
     },
   },
+  blockExplorers: {
+    default: {
+      name: 'Root Network Explorer',
+      url: 'https://explorer.rootnet.app',
+    },
+  },
+  testnet: true,
 });
-
-// Get the base URL for redirects
-const getBaseUrl = () => {
-  if (typeof window === 'undefined') return '';
-  
-  return import.meta.env.VITE_APP_URL || window.location.origin;
-};
 
 // Initialize the Futureverse Auth Client
 export const authClient = new FutureverseAuthClient({
-  clientId,
-  environment: futurePassApiUrl.includes('dev') ? 'development' : 'production',
-  redirectUri: `${getBaseUrl()}/auth/callback`,
+  clientId: FUTUREPASS_CONFIG.CLIENT_ID,
+  environment: FUTUREPASS_CONFIG.ENVIRONMENT as Environment,
+  redirectUri: FUTUREPASS_CONFIG.AUTH_CONFIG.redirect_uri,
+  signInFlow: 'redirect'
 });
 
-// Initialize the Query Client for data fetching
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    },
-  },
+// Create wagmi config getter function
+export const getWagmiConfig = () => createWagmiConfig({
+  chains: [rootNetwork],
+  walletConnectProjectId: ENV_CONFIG.WALLET_CONNECT_PROJECT_ID,
+  storage: createStorage({
+    storage: cookieStorage,
+  }),
+  authClient
 });
 
-// Create Wagmi configuration
-export const getWagmiConfig = async () => {
-  return createWagmiConfig({
-    walletConnectProjectId,
-    authClient,
-    ssr: false,
-    chains: [rootNetwork],
-    storage: createStorage({
-      storage: cookieStorage,
-    }),
-  });
-}; 
+// Initialize the query client
+export const queryClient = new QueryClient(); 

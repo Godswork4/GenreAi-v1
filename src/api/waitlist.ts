@@ -1,18 +1,34 @@
-import { supabase } from '../lib/supabase';
-import { getRandomHex } from '../utils/crypto';
+import { mockWaitlistService } from '../services/mockWaitlistService';
 
 export const handleWaitlistSubmission = async (email: string) => {
   try {
-    // Validate email format
+    // Use mock service during development
+    const result = await mockWaitlistService.join(email);
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to join waitlist');
+    }
+
+    return { success: true, referralCode: result.referralCode };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// TODO: Implement Supabase integration when CSP issues are resolved
+/*
+import { supabase } from '../lib/supabase';
+import { getRandomHex } from '../utils/crypto';
+
+export const handleWaitlistSubmissionWithSupabase = async (email: string) => {
+  try {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw new Error('Please enter a valid email address');
     }
 
-    // Generate a unique referral code
     const referralCode = getRandomHex(6);
 
-    // Insert into waitlist
     const { error } = await supabase
       .from('waitlist')
       .insert([{ email, referral_code: referralCode }]);
@@ -28,4 +44,5 @@ export const handleWaitlistSubmission = async (email: string) => {
   } catch (error) {
     throw error;
   }
-}; 
+};
+*/ 

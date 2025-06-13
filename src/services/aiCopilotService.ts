@@ -1,5 +1,7 @@
 import { RootNetworkService } from './rootNetworkService';
 import { ENV_CONFIG } from '../config/environment';
+import { ethers } from 'ethers';
+import { DEX_PRECOMPILE_ABI } from '@therootnetwork/evm';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -9,7 +11,7 @@ interface ChatMessage {
 interface AIResponse {
   text: string;
   action?: {
-    type: 'swap' | 'stake' | 'unstake' | 'provide_liquidity';
+    type: 'swap' | 'stake' | 'unstake' | 'provide_liquidity' | 'bridge';
     params: Record<string, string>;
   };
   suggestions?: string[];
@@ -37,6 +39,12 @@ interface UserContext {
   };
   address: string;
 }
+
+const DEX_ADDRESS = '0x000000000000000000000000000000000000DdDD';
+const ROOT_ADDRESS = '0xCCCCCCCC00000001000000000000000000000000';
+const USDC_ADDRESS = '0xCCCCCCCC00000864000000000000000000000000';
+const XRP_ADDRESS = '0xCCCCCCCC00000002000000000000000000000000';
+const ASTO_ADDRESS = '0xCCCCCCCC00004464000000000000000000000000';
 
 export class AICopilotService {
   private static readonly COMMON_SUGGESTIONS = [
@@ -361,32 +369,49 @@ export class AICopilotService {
 
   static async executeAIAction(
     action: AIResponse['action'],
-    userAddress: string
+    userAddress: string,
+    signer?: ethers.Signer
   ): Promise<string> {
     if (!action) return '';
 
     try {
       switch (action.type) {
-        case 'swap':
-          const amountIn = (parseFloat(action.params.amount) * Math.pow(10, 6)).toString();
-          const amountOutMin = (parseFloat(action.params.minReceived || '0') * Math.pow(10, 6)).toString();
-          
-          return await RootNetworkService.swap(
-            userAddress,
+        case 'swap': {
+          if (!signer) throw new Error('No signer provided for swap');
+          const dex = new ethers.Contract(DEX_ADDRESS, DEX_PRECOMPILE_ABI, signer);
+          const from = action.params.fromToken;
+          const to = action.params.toToken;
+          const amountIn = ethers.utils.parseUnits(action.params.amount, 6);
+          const path = [
+            from === 'ROOT' ? ROOT_ADDRESS : USDC_ADDRESS,
+            to === 'USDC' ? USDC_ADDRESS : ROOT_ADDRESS
+          ];
+          const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+          const amountsOut = await dex.getAmountsOut(amountIn, path);
+          const amountOutMin = amountsOut[1].mul(95).div(100); // 5% slippage
+          // Approve if needed (not shown here)
+          const tx = await dex.swapExactTokensForTokens(
             amountIn,
             amountOutMin,
-            parseInt(action.params.fromToken),
-            parseInt(action.params.toToken)
+            path,
+            userAddress,
+            deadline
           );
-
-        case 'stake':
+          const receipt = await tx.wait();
+          return receipt.transactionHash;
+        }
+        case 'stake': {
           const stakeAmount = (parseFloat(action.params.amount) * Math.pow(10, 6)).toString();
           return await RootNetworkService.stake(userAddress, stakeAmount);
-
-        case 'unstake':
+        }
+        case 'unstake': {
           const unstakeAmount = (parseFloat(action.params.amount) * Math.pow(10, 6)).toString();
           return await RootNetworkService.unstake(userAddress, unstakeAmount);
-
+        }
+        case 'bridge': {
+          // Placeholder for bridge logic
+          throw new Error('Bridge functionality not yet implemented');
+        }
         default:
           throw new Error(`Unknown action type: ${action.type}`);
       }
