@@ -5,6 +5,7 @@ import { rootNetwork } from '../config/web3.config';
 import { useDemoStore } from '../store/demoStore';
 import { useAuth } from '../store/authStore';
 import { DemoWalletService } from './demoWalletService';
+import { walletService } from './wallet'; // adjust path as needed
 
 const WS_URL = rootNetwork.rpcUrls.default.webSocket[0];
 
@@ -232,18 +233,25 @@ export class TRNService {
   ): Promise<string> {
     try {
       const { user } = useAuth.getState();
-      
       if (user?.isDemo) {
         // Simulate transaction for demo
         return 'demo-tx-hash-' + Date.now();
       }
-
       const api = await this.connect();
+      const account = walletService.getPolkadotAccount();
+      if (!account) throw new Error('Wallet not initialized');
+      const signer = walletService.getSigner();
       const tx = api.tx.amm.swap(fromToken, toToken, amount, minReceived);
-      
-      const injector = await web3FromAddress(address);
-      const result = await tx.signAndSend(address, { signer: injector.signer });
-      return result.toString();
+      const result = await new Promise((resolve, reject) => {
+        tx.signAndSend(account.address, { signer }, ({ status, dispatchError, txHash }) => {
+          if (dispatchError) {
+            reject(new Error(dispatchError.toString()));
+          } else if (status.isInBlock || status.isFinalized) {
+            resolve(txHash.toString());
+          }
+        });
+      });
+      return result as string;
     } catch (error) {
       console.error('Error executing swap:', error);
       throw error;

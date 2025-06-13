@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../store/authStore';
 import { AICopilotService } from '../services/aiCopilotService';
+import { SwapService, SwapParams, SwapQuote } from '../services/ai/swapService';
 
 interface Message {
   id: string;
@@ -10,6 +11,14 @@ interface Message {
     type: string;
     params: Record<string, string>;
   };
+  swapQuote?: SwapQuote;
+  swapParams?: SwapParams;
+}
+
+interface CommandState {
+  type: 'swap' | 'balance' | null;
+  step: number;
+  params: Partial<SwapParams>;
 }
 
 export const AIChatBox: React.FC = () => {
@@ -18,6 +27,12 @@ export const AIChatBox: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSwap, setPendingSwap] = useState<{quote: SwapQuote, params: SwapParams} | null>(null);
+  const [commandState, setCommandState] = useState<CommandState>({
+    type: null,
+    step: 0,
+    params: {}
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -27,6 +42,103 @@ export const AIChatBox: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Command parsing and handling
+  const handleCommand = (text: string) => {
+    const parts = text.trim().split(' ');
+    const command = parts[0].toLowerCase();
+
+    if (command === '/swap') {
+      if (parts.length === 1) {
+        // Just /swap command
+        setCommandState({
+          type: 'swap',
+          step: 1,
+          params: {}
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: 'How many tokens would you like to swap?'
+        }]);
+        return true;
+      } else if (parts.length === 2) {
+        // /swap <amount>
+        const amount = parts[1];
+        if (isNaN(Number(amount))) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            type: 'ai',
+            text: 'Please enter a valid number for the amount.'
+          }]);
+          return true;
+        }
+        setCommandState({
+          type: 'swap',
+          step: 2,
+          params: { amount }
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: `Swap ${amount} of which token?`
+        }]);
+        return true;
+      } else if (parts.length === 3) {
+        // /swap <amount> <fromToken>
+        const amount = parts[1];
+        const fromToken = parts[2].toUpperCase();
+        setCommandState({
+          type: 'swap',
+          step: 3,
+          params: { amount, fromToken }
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: `Swap ${amount} ${fromToken} to which token?`
+        }]);
+        return true;
+      } else if (parts.length === 5 && parts[3].toLowerCase() === 'to') {
+        // Complete swap command: /swap <amount> <fromToken> to <toToken>
+        const amount = parts[1];
+        const fromToken = parts[2].toUpperCase();
+        const toToken = parts[4].toUpperCase();
+        
+        setCommandState({
+          type: null,
+          step: 0,
+          params: {}
+        });
+
+        // Process the complete swap command
+        processSwapCommand({ amount, fromToken, toToken });
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const processSwapCommand = async (params: SwapParams) => {
+    try {
+      const quote = await SwapService.getSwapQuote(params);
+      setPendingSwap({ quote, params });
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'ai',
+        text: `Swap Quote:\n${params.amount} ${params.fromToken} → ~${quote.toToken.amount} ${params.toToken}\nPrice Impact: ${quote.priceImpact}%\nEstimated Gas: ${quote.estimatedGas}\n\nType /confirm to execute this swap.`,
+        swapQuote: quote,
+        swapParams: params
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'ai',
+        text: 'Failed to get swap quote. Please try again.'
+      }]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +155,42 @@ export const AIChatBox: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
+    // Handle command state
+    if (commandState.type === 'swap') {
+      const handled = handleCommand(userMessage.text);
+      if (handled) {
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // Check for confirm command
+    if (userMessage.text.trim().toLowerCase() === '/confirm' && pendingSwap) {
+      try {
+        // TODO: Replace with real signer from wallet
+        const mockSigner = {
+          sendTransaction: async () => ({ wait: async () => ({ hash: '0xMOCKHASH' }) })
+        } as any;
+        const txHash = await SwapService.executeSwap(pendingSwap.params, mockSigner);
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: `Swap executed! Transaction hash: ${txHash}`
+        }]);
+        setPendingSwap(null);
+      } catch (err) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: 'Failed to execute swap. Please try again.'
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Default: Use AI Copilot
     try {
       const aiResponse = await AICopilotService.getAIResponse(
         userMessage.text,
@@ -50,7 +198,7 @@ export const AIChatBox: React.FC = () => {
       );
 
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: Date.now().toString(),
         type: 'ai',
         text: aiResponse.text,
         action: aiResponse.action
@@ -89,6 +237,24 @@ export const AIChatBox: React.FC = () => {
     }
   };
 
+  // Render message with command highlighting
+  const renderMessage = (message: Message) => {
+    if (message.type === 'user' && message.text.startsWith('/')) {
+      const parts = message.text.split(' ');
+      return (
+        <div className="space-y-1">
+          <span className="text-blue-400">{parts[0]}</span>
+          {parts.slice(1).map((part, index) => (
+            <span key={index} className="text-white">
+              {part}{' '}
+            </span>
+          ))}
+        </div>
+      );
+    }
+    return <p className="whitespace-pre-wrap">{message.text}</p>;
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-xl overflow-hidden">
       {/* Chat Header */}
@@ -116,7 +282,7 @@ export const AIChatBox: React.FC = () => {
                   : 'bg-gray-800 text-gray-100'
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.text}</p>
+              {renderMessage(message)}
               {message.action && (
                 <button
                   onClick={() => handleActionClick(message.action)}
@@ -145,7 +311,13 @@ export const AIChatBox: React.FC = () => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me anything about DeFi..."
+            placeholder={commandState.type === 'swap' 
+              ? commandState.step === 1 
+                ? "Enter amount to swap..."
+                : commandState.step === 2 
+                  ? "Enter token to swap from..."
+                  : "Enter token to swap to..."
+              : "Ask me anything about DeFi... or try /swap 10 ROOT to USDT"}
             className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isLoading}
           />

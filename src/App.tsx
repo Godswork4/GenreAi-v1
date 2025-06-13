@@ -12,7 +12,9 @@ import { initializeWeb3 } from './lib/web3-setup';
 import { testSupabaseConnection } from './lib/supabase';
 import { queryClient } from './lib/query-client';
 import { config } from './config/wagmi.config';
+import { TokenPriceDisplay } from './components/TokenPriceDisplay';
 import './App.css';
+import FuturePassComingSoon from './pages/FuturePassComingSoon';
 
 function App() {
   const [isInitialized, setIsInitialized] = useState(false);
@@ -77,6 +79,9 @@ function App() {
         <WagmiProvider config={config}>
           <FutureverseAuthProvider authClient={authClient}>
             <FuturePassAuth />
+            <div className="container mx-auto px-4 py-8">
+              <TokenPriceDisplay />
+            </div>
             <BrowserRouter>
               <AppRoutes />
             </BrowserRouter>

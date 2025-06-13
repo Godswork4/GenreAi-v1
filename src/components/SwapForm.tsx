@@ -31,6 +31,12 @@ const tokens: TokenOption[] = [
     name: 'Tether USD',
     icon: '/icons/usdt.svg',
     assetId: RootNetworkService.ASSETS.USDT
+  },
+  {
+    symbol: 'SYLO',
+    name: 'Sylo',
+    icon: '/icons/sylo.svg',
+    assetId: 3172
   }
 ];
 
@@ -94,7 +100,7 @@ export const SwapForm = () => {
         setIsLoading(true);
         setError(null);
         
-        const amountIn = parseUnits(amount, 6);
+        const amountIn = BigInt(parseUnits(amount, 6).toString());
         const estimate = await RootNetworkService.getSwapEstimate(
           amountIn.toString(),
           fromToken.assetId,
@@ -122,10 +128,8 @@ export const SwapForm = () => {
     if (!address || !amount || fromToken.assetId === toToken.assetId) return;
     setTxStatus(null);
     try {
-      const amountIn = parseUnits(amount, 6);
-      const minAmountOut = parseUnits(estimatedAmount, 6)
-        .multiply(95)
-        .divide(100); // 5% slippage tolerance
+      const amountIn = BigInt(parseUnits(amount, 6).toString());
+      const minAmountOut = (BigInt(parseUnits(estimatedAmount, 6).toString()) * 95n) / 100n;
 
       const txHash = await RootNetworkService.swap(
         address,
@@ -162,43 +166,42 @@ export const SwapForm = () => {
     <AnimatePresence>
       {show && (
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          className="absolute top-full left-0 mt-2 w-full bg-gray-800 rounded-xl shadow-lg border border-gray-700 z-50"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={onClose}
         >
-          <div className="p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-white">Select Token</h3>
-              <button onClick={onClose} className="text-gray-400 hover:text-white">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+          <motion.div
+            initial={{ scale: 0.95, y: 40 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.95, y: 40 }}
+            className="bg-[#181A20] rounded-2xl shadow-xl p-6 w-full max-w-xs mx-auto border border-gray-700 relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="font-semibold text-white mb-4 flex justify-between items-center">
+              <span>Select Token</span>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>
-            <div className="space-y-2">
-              {tokens.map((token) => (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {tokens.map(token => (
                 <button
                   key={token.symbol}
                   onClick={() => {
                     onSelect(token);
                     onClose();
                   }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                    selected.symbol === token.symbol
-                      ? 'bg-blue-500/20 text-blue-400'
-                      : 'hover:bg-gray-700 text-white'
-                  }`}
+                  className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl transition-colors ${selected.symbol === token.symbol ? 'bg-blue-900/60 text-blue-300' : 'hover:bg-gray-700/40 text-white'}`}
                 >
                   <img src={token.icon} alt={token.symbol} className="w-8 h-8 rounded-full" />
-                  <div className="text-left">
-                    <p className="font-medium">{token.symbol}</p>
-                    <p className="text-sm text-gray-400">{token.name}</p>
+                  <div className="flex flex-col items-start">
+                    <span className="font-bold text-base">{token.symbol}</span>
+                    <span className="text-xs text-gray-400">{token.name}</span>
                   </div>
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

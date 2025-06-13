@@ -2,6 +2,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { demoWalletService } from './demoWalletService';
 import { ENV_CONFIG } from '../config/environment';
 import { BN } from '@polkadot/util';
+import { walletService } from './wallet'; // adjust path as needed
 
 const MINIMUM_STAKE = new BN('25000000000000000000'); // 25 ROOT in Wei
 
@@ -19,27 +20,19 @@ class StakingService {
   public static async stake(amount: string): Promise<string> {
     try {
       const api = await this.getApi();
-      const amountBN = new BN(amount);
-
-      if (amountBN.lt(MINIMUM_STAKE)) {
-        throw new Error('Minimum staking amount is 25 ROOT');
-      }
-
-      // Get the demo account
-      const account = demoWalletService.getPolkadotAccount();
-      if (!account) {
-        throw new Error('Demo wallet not initialized');
-      }
-
-      // Create and sign the staking transaction
-      const tx = api.tx.staking.bond(
-        account.address, // Controller account (same as stash in our case)
-        amountBN.toString(),
-        'Staked' // Reward destination - rewards will be staked automatically
-      );
-
-      const hash = await tx.signAndSend(account);
-      return hash.toString();
+      const account = walletService.getPolkadotAccount();
+      if (!account) throw new Error('Wallet not initialized');
+      const signer = walletService.getSigner();
+      const tx = api.tx.staking.bond(amount, 'Staked');
+      return await new Promise((resolve, reject) => {
+        tx.signAndSend(account.address, { signer }, ({ status, dispatchError, txHash }) => {
+          if (dispatchError) {
+            reject(new Error(dispatchError.toString()));
+          } else if (status.isInBlock || status.isFinalized) {
+            resolve(txHash.toString());
+          }
+        });
+      });
     } catch (error) {
       console.error('Staking error:', error);
       throw error;

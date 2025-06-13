@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../store/authStore';
 import { useDemoStore } from '../store/demoStore';
 import { RootNetworkService } from '../services/rootNetworkService';
-import { WalletService } from '../services/walletService';
+import { walletService } from '../services/wallet';
+import { erc20ABI } from '../config/contracts';
 import {
   ChartBarIcon,
   ArrowTrendingUpIcon,
@@ -14,7 +15,7 @@ import {
   ClipboardIcon,
   CheckIcon
 } from '@heroicons/react/24/outline';
-import { ethers } from 'ethers';
+import { BrowserProvider, Contract, formatUnits, parseUnits } from 'ethers';
 import { DEX_PRECOMPILE_ABI } from '@therootnetwork/evm';
 
 interface TokenBalance {
@@ -47,6 +48,11 @@ const USDC_ADDRESS = '0xCCCCCCCC00000864000000000000000000000000';
 const XRP_ADDRESS = '0xCCCCCCCC00000002000000000000000000000000';
 const ASTO_ADDRESS = '0xCCCCCCCC00004464000000000000000000000000';
 
+const SYLO_ASSET_ID = 3172;
+const SYLO_ICON = 'https://app.dexter.trade/images/sylo.svg';
+const SYLO_CONTRACT = '0xCCCCCCCC00000C64000000000000000000000000'; // assetIdToERC20Address(3172)
+const SYLO_DECIMALS = 18;
+
 const Portfolio: React.FC = () => {
   const { user } = useAuth();
   const { isDemoMode, demoWallet } = useDemoStore();
@@ -64,7 +70,7 @@ const Portfolio: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
 
-  const activeAddress = isDemoMode ? demoWallet?.evmAddress : null;
+  const activeAddress = walletService.address;
 
   useEffect(() => {
     fetchPortfolioData();
@@ -72,12 +78,12 @@ const Portfolio: React.FC = () => {
     const fetchPrices = async () => {
       try {
         // Use window.ethereum or fallback to a default provider
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const dex = new ethers.Contract(DEX_ADDRESS, DEX_PRECOMPILE_ABI, provider);
+        const provider = new BrowserProvider(window.ethereum);
+        const dex = new Contract(DEX_ADDRESS, DEX_PRECOMPILE_ABI, provider);
         // Get price of 1 ROOT in USDC
-        const amountIn = ethers.utils.parseUnits('1', 6); // 1 ROOT (6 decimals)
+        const amountIn = parseUnits('1', 6); // 1 ROOT (6 decimals)
         const amountsOut = await dex.getAmountsOut(amountIn, [ROOT_ADDRESS, USDC_ADDRESS]);
-        const rootPrice = parseFloat(ethers.utils.formatUnits(amountsOut[1], 6));
+        const rootPrice = parseFloat(formatUnits(amountsOut[1], 6));
         // Optionally fetch other token prices similarly
         setTokenPrices({ ROOT: rootPrice });
       } catch (err) {
@@ -102,11 +108,26 @@ const Portfolio: React.FC = () => {
       const rootBalance = await RootNetworkService.getBalance(activeAddress, 1);
       // Fetch other token balances
       const balances = await RootNetworkService.getTokenBalances(activeAddress);
-      const allTokens = Object.values(RootNetworkService.TOKENS);
+      // Fetch SYLO balance using ethers.js
+      let syloBalance = '0';
+      try {
+        const provider = new BrowserProvider(window.ethereum);
+        const syloContract = new Contract(SYLO_CONTRACT, erc20ABI, provider);
+        const bal = await syloContract.balanceOf(activeAddress);
+        syloBalance = bal.toString();
+      } catch (e) {
+        syloBalance = '0';
+      }
+      const allTokens = [
+        ...Object.values(RootNetworkService.TOKENS),
+        { symbol: 'SYLO', decimals: SYLO_DECIMALS, assetId: SYLO_ASSET_ID, icon: SYLO_ICON }
+      ];
       const tokenData: TokenBalance[] = allTokens.map(tokenInfo => {
         let balance = '0';
         if (tokenInfo.symbol === 'ROOT') {
           balance = rootBalance || '0';
+        } else if (tokenInfo.symbol === 'SYLO') {
+          balance = syloBalance;
         } else {
           balance = balances[tokenInfo.symbol] || '0';
         }
@@ -181,7 +202,7 @@ const Portfolio: React.FC = () => {
 
   const requestFaucet = () => {
     if (activeAddress) {
-      WalletService.requestFaucetTokens(activeAddress);
+      walletService.requestFaucetTokens(activeAddress);
     }
   };
 

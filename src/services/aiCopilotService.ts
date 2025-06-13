@@ -245,6 +245,34 @@ export class AICopilotService {
     const userContext = await this.getUserContext(userAddress);
     const marketContext = await this.getMarketContext();
     
+    // Handle highest price token query
+    if (message.includes('highest price') || message.includes('highest priced') || message.includes('most expensive')) {
+      try {
+        const highestPricedToken = await RootNetworkService.getHighestPricedToken();
+        return {
+          text: `The token with the highest price on RootNetwork in the last 24 hours is ${highestPricedToken.symbol}.\n\n` +
+                `Current Price: $${highestPricedToken.price.toFixed(2)}\n` +
+                `24h Change: ${highestPricedToken.change24h >= 0 ? '+' : ''}${highestPricedToken.change24h.toFixed(2)}%`,
+          suggestions: [
+            "Show me the price history of this token",
+            "What's the trading volume?",
+            "Compare with other tokens",
+            "Show me the liquidity pools"
+          ]
+        };
+      } catch (error) {
+        console.error('Error getting highest priced token:', error);
+        return {
+          text: "I apologize, but I'm having trouble fetching the token price information right now. Please try again in a few moments.",
+          suggestions: [
+            "Try asking about specific token prices",
+            "Check market overview",
+            "Show available trading pairs"
+          ]
+        };
+      }
+    }
+
     if (message.includes('swap') || message.includes('trade')) {
       const availablePools = marketContext.pools.map(p => `${p.token0}/${p.token1}`).join(', ');
       return {

@@ -8,6 +8,9 @@ import { ENV_CONFIG } from '../config/environment';
 import type { Option, Vec } from '@polkadot/types';
 import type { Codec } from '@polkadot/types/types';
 import type { PalletDexPool } from '@polkadot/types/lookup';
+import { RootNetwork } from '@therootnetwork/evm';
+import { ethers } from 'ethers';
+import { walletService } from './wallet'; // adjust path as needed
 
 const ROOT_NETWORK_RPC = 'wss://porcini.rootnet.app';
 const FAUCET_URL = 'https://faucet.rootnet.live';
@@ -42,6 +45,8 @@ interface StakingInfo {
 export class RootNetworkService {
   private static api: ApiPromise | null = null;
   private static keyring: Keyring | null = null;
+  private provider: ethers.JsonRpcProvider;
+  private rootNetwork: RootNetwork;
 
   // Root Network asset IDs
   static readonly ASSETS = {
@@ -57,6 +62,12 @@ export class RootNetworkService {
     1984: { symbol: 'USDT', decimals: 6, assetId: 1984 },
     17508: { symbol: 'ASTO', decimals: 18, assetId: 17508 },
   };
+
+  constructor() {
+    // Connect to RootNetwork mainnet
+    this.provider = new ethers.JsonRpcProvider('https://root.rootnetwork.live');
+    this.rootNetwork = new RootNetwork(this.provider);
+  }
 
   static async initialize(): Promise<void> {
     try {
@@ -302,23 +313,17 @@ export class RootNetworkService {
     }
   }
 
-  static async stake(signer: string, amount: string): Promise<string> {
+  static async stake(amount: string): Promise<string> {
     try {
       const api = await this.getApi();
-      const tx = api.tx.staking.bond(
-        new BN(amount),
-        'Staked' // reward destination
-      );
-      const injector = await web3FromAddress(signer);
+      const account = walletService.getPolkadotAccount(); // or getEvmAccount() if EVM
+      if (!account) throw new Error('Wallet not initialized');
+      const signer = walletService.getSigner(); // ethers.js Wallet or similar
+      const tx = api.tx.staking.bond(new BN(amount), 'Staked');
       return await new Promise((resolve, reject) => {
-        tx.signAndSend(signer, { signer: injector.signer }, ({ status, dispatchError, txHash }) => {
+        tx.signAndSend(account.address, { signer }, ({ status, dispatchError, txHash }) => {
           if (dispatchError) {
-            let message = dispatchError.toString();
-            if (dispatchError.isModule && api.registry) {
-              const decoded = api.registry.findMetaError(dispatchError.asModule);
-              message = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-            }
-            reject(new Error(message));
+            reject(new Error(dispatchError.toString()));
           } else if (status.isInBlock || status.isFinalized) {
             resolve(txHash.toString());
           }
@@ -436,6 +441,40 @@ export class RootNetworkService {
       };
     } catch (error) {
       console.error('Error calculating swap estimate:', error);
+      throw error;
+    }
+  }
+
+  async getHighestPricedToken(): Promise<{ symbol: string; price: number; change24h: number }> {
+    try {
+      // Get all tokens from RootNetwork
+      const tokens = await this.rootNetwork.getTokens();
+      
+      let highestPrice = 0;
+      let highestPricedToken = null;
+
+      // Iterate through tokens to find the one with highest price
+      for (const token of tokens) {
+        const price = await this.rootNetwork.getTokenPrice(token.address);
+        const price24hAgo = await this.rootNetwork.getTokenPrice(token.address, Date.now() - 24 * 60 * 60 * 1000);
+        
+        if (price > highestPrice) {
+          highestPrice = price;
+          highestPricedToken = {
+            symbol: token.symbol,
+            price: price,
+            change24h: ((price - price24hAgo) / price24hAgo) * 100
+          };
+        }
+      }
+
+      if (!highestPricedToken) {
+        throw new Error('No tokens found');
+      }
+
+      return highestPricedToken;
+    } catch (error) {
+      console.error('Error fetching highest priced token:', error);
       throw error;
     }
   }

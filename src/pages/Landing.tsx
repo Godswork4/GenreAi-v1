@@ -97,12 +97,7 @@ export const Landing = () => {
   };
 
   const handleFuturePassLogin = async () => {
-    try {
-      await signIn({ type: 'futureverseCustodialEmail' });
-      // The actual navigation will happen in the callback
-    } catch (error) {
-      console.error('Failed to login with FuturePass:', error);
-    }
+    navigate('/futurepass-coming-soon');
   };
 
   return (

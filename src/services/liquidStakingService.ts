@@ -2,7 +2,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { demoWalletService } from './demoWalletService';
 import { ENV_CONFIG } from '../config/environment';
 import { BN } from '@polkadot/util';
-import { web3FromAddress } from '@polkadot/extension-dapp';
+import { walletService } from './wallet';
 import { ethers } from "ethers";
 
 const MINIMUM_STAKE = new BN('25000000000000000000'); // 25 ROOT in Wei
@@ -21,31 +21,18 @@ class StakingService {
   public static async stake(amount: string): Promise<string> {
     try {
       const api = await this.getApi();
-      const amountBN = new BN(amount);
-
-      if (amountBN.lt(MINIMUM_STAKE)) {
-        throw new Error('Minimum staking amount is 25 ROOT');
-      }
-
-      // Get the demo account
-      const account = demoWalletService.getPolkadotAccount();
-      if (!account) {
-        throw new Error('Demo wallet not initialized');
-      }
-
-      const injector = await web3FromAddress(account.address);
-      const tx = api.tx.staking.bond(amountBN.toString(), 'Staked');
-      const unsub = await tx.signAndSend(account, { signer: injector.signer }, ({ status, dispatchError, txHash }) => {
-        if (status.isInBlock || status.isFinalized) {
-          // Transaction is in block or finalized
-          unsub(); // Unsubscribe from updates
-          return txHash.toString();
-        }
-        if (dispatchError) {
-          // Handle error
-          unsub();
-          throw new Error('Transaction failed');
-        }
+      const account = walletService.getPolkadotAccount();
+      if (!account) throw new Error('Wallet not initialized');
+      const signer = walletService.getSigner();
+      const tx = api.tx.staking.bond(amount, 'Staked');
+      return await new Promise((resolve, reject) => {
+        tx.signAndSend(account.address, { signer }, ({ status, dispatchError, txHash }) => {
+          if (dispatchError) {
+            reject(new Error(dispatchError.toString()));
+          } else if (status.isInBlock || status.isFinalized) {
+            resolve(txHash.toString());
+          }
+        });
       });
     } catch (error) {
       console.error('Staking error:', error);
@@ -156,15 +143,12 @@ class StakingService {
   public static async swapTokens(amountIn: string, amountOutMin: string, path: string[], to: string, deadline: string): Promise<string> {
     try {
       const api = await this.getApi();
-      const account = demoWalletService.getPolkadotAccount();
-      if (!account) {
-        throw new Error('Demo wallet not initialized');
-      }
-
+      const account = walletService.getPolkadotAccount();
+      if (!account) throw new Error('Wallet not initialized');
+      const signer = walletService.getSigner();
       const contract = new ethers.Contract(DEX_ADDRESS, DEX_ABI, signer);
       const tx = await contract.swapExactTokensForTokens(amountIn, amountOutMin, path, to, deadline);
       await tx.wait();
-
       return tx.hash;
     } catch (error) {
       console.error('Swap error:', error);

@@ -16,11 +16,12 @@ import {
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { MotionProps } from 'framer-motion';
-import Chat from '../AICopilot/Chat';
+import { AIChatBox } from '../AIChatBox';
 import Leaderboard from '../Community/Leaderboard';
 import { Bars3Icon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../store/authStore';
 import { FuturePassService } from '../../services/futurePassService';
+import { walletService } from "../../services/wallet";
 
 interface MotionDivProps extends MotionProps {
   className?: string;
@@ -139,6 +140,8 @@ const MainLayout: React.FC = () => {
       console.error('Logout failed:', error);
     }
   };
+
+  const activeAddress = walletService.address;
 
   return (
     <div className="flex h-screen bg-[#0f1011]">
@@ -271,30 +274,44 @@ const MainLayout: React.FC = () => {
           <Outlet />
           )}
         </main>
-      </div>
 
-      {/* Chat Sidebar */}
-      <AnimatePresence>
-        {isChatOpen && (
-          <MotionAside
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'tween' }}
-            className="fixed inset-y-0 right-0 w-96 bg-[#1a1b1f] border-l border-gray-800 shadow-xl"
-          >
-            <div className="absolute top-4 right-4">
-              <button
-                onClick={() => setIsChatOpen(false)}
-                className="p-2 text-gray-400 hover:text-white transition-colors"
+        {/* AI Chat Modal */}
+        <AnimatePresence>
+          {isChatOpen && (
+            <MotionDiv
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+              onClick={() => setIsChatOpen(false)}
+            >
+              <MotionDiv
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="absolute right-0 top-0 h-full w-full max-w-md bg-[#1a1b1f] shadow-xl"
+                onClick={e => e.stopPropagation()}
               >
-                <XMarkIcon className="w-6 h-6" />
-              </button>
-            </div>
-            <Chat />
-          </MotionAside>
-        )}
-      </AnimatePresence>
+                <div className="h-full flex flex-col">
+                  <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                    <h2 className="text-lg font-semibold text-white">AI Assistant</h2>
+                    <button
+                      onClick={() => setIsChatOpen(false)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      <XMarkIcon className="w-6 h-6" />
+                    </button>
+                  </div>
+                  <div className="flex-1">
+                    <AIChatBox />
+                  </div>
+                </div>
+              </MotionDiv>
+            </MotionDiv>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };

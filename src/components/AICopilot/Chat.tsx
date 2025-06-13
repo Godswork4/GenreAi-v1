@@ -1,21 +1,33 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { PaperAirplaneIcon, KeyIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon, KeyIcon, BeakerIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import type { MotionProps } from 'framer-motion';
 import { useAuth } from '../../store/authStore';
 import { AICopilotService } from '../../services/aiCopilotService';
+import { SwapService, SwapParams, SwapQuote } from '../../services/ai/swapService';
 import SpeechAssistant from './SpeechAssistant';
 import ApiKeyModal from '../ApiKeyModal';
+import { walletService } from '../../services/wallet';
+
+type ActionType = 'swap' | 'stake' | 'unstake' | 'provide_liquidity' | 'bridge';
 
 interface Message {
   id: string;
   text: string;
   type: 'user' | 'ai';
   action?: {
-    type: 'swap' | 'stake' | 'unstake' | 'provide_liquidity';
+    type: ActionType;
     params: Record<string, string>;
   };
   suggestions?: string[];
+  swapQuote?: SwapQuote;
+  swapParams?: SwapParams;
+}
+
+interface CommandState {
+  type: 'swap' | 'balance' | null;
+  step: number;
+  params: Partial<SwapParams>;
 }
 
 interface MotionDivProps extends MotionProps {
@@ -25,6 +37,7 @@ interface MotionDivProps extends MotionProps {
 
 const Chat: React.FC = () => {
   const { user } = useAuth();
+  const activeAddress = walletService.address;
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -42,12 +55,18 @@ const Chat: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [showInitialOptions, setShowInitialOptions] = useState(true);
+  const [commandState, setCommandState] = useState<CommandState>({
+    type: null,
+    step: 0,
+    params: {}
+  });
+  const [pendingSwap, setPendingSwap] = useState<{quote: SwapQuote, params: SwapParams} | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -98,12 +117,109 @@ const Chat: React.FC = () => {
     setHasApiKey(false); // Use demo mode
   };
 
+  // Command parsing and handling
+  const handleCommand = (text: string) => {
+    const parts = text.trim().split(' ');
+    const command = parts[0].toLowerCase();
+
+    if (command === '/swap') {
+      if (parts.length === 1) {
+        // Just /swap command
+        setCommandState({
+          type: 'swap',
+          step: 1,
+          params: {}
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: 'How many tokens would you like to swap?'
+        }]);
+        return true;
+      } else if (parts.length === 2) {
+        // /swap <amount>
+        const amount = parts[1];
+        if (isNaN(Number(amount))) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            type: 'ai',
+            text: 'Please enter a valid number for the amount.'
+          }]);
+          return true;
+        }
+        setCommandState({
+          type: 'swap',
+          step: 2,
+          params: { amount }
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: `Swap ${amount} of which token?`
+        }]);
+        return true;
+      } else if (parts.length === 3) {
+        // /swap <amount> <fromToken>
+        const amount = parts[1];
+        const fromToken = parts[2].toUpperCase();
+        setCommandState({
+          type: 'swap',
+          step: 3,
+          params: { amount, fromToken }
+        });
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'ai',
+          text: `Swap ${amount} ${fromToken} to which token?`
+        }]);
+        return true;
+      } else if (parts.length === 5 && parts[3].toLowerCase() === 'to') {
+        // Complete swap command: /swap <amount> <fromToken> to <toToken>
+        const amount = parts[1];
+        const fromToken = parts[2].toUpperCase();
+        const toToken = parts[4].toUpperCase();
+        
+        setCommandState({
+          type: null,
+          step: 0,
+          params: {}
+        });
+
+        // Process the complete swap command
+        processSwapCommand({ amount, fromToken, toToken });
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const processSwapCommand = async (params: SwapParams) => {
+    try {
+      const quote = await SwapService.getSwapQuote(params);
+      setPendingSwap({ quote, params });
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'ai',
+        text: `Swap Quote:\n${params.amount} ${params.fromToken} → ~${quote.toToken.amount} ${params.toToken}\nPrice Impact: ${quote.priceImpact}%\nEstimated Gas: ${quote.estimatedGas}\n\nType /confirm to execute this swap.`,
+        swapQuote: quote,
+        swapParams: params
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'ai',
+        text: 'Failed to get swap quote. Please try again.'
+      }]);
+    }
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault();
     }
     
-    if (!input.trim() || !user || isLoading || isTyping) return;
+    if (!input.trim() || !activeAddress || isLoading || isTyping) return;
     
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -124,15 +240,14 @@ const Chat: React.FC = () => {
         type: 'ai'
       }]);
 
-      const walletAddress = user.futurePassAddress || user.demoWalletAddress;
-      if (!walletAddress) {
+      if (!activeAddress) {
         throw new Error('No wallet address available');
       }
 
       const apiKey = hasApiKey ? localStorage.getItem('openai_api_key') : null;
       const aiResponse = await AICopilotService.getAIResponse(
         userMessage.text,
-        walletAddress,
+        activeAddress,
         apiKey
       );
 
@@ -176,22 +291,15 @@ const Chat: React.FC = () => {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion);
-    setTimeout(() => handleSend(), 100);
+    handleSend();
   };
 
   const handleTranscript = (text: string) => {
     setInput(text);
-    // Automatically send after speech recognition
-    if (text.trim()) {
-      setTimeout(() => handleSend(), 500);
-    }
   };
 
   const handleActionClick = async (action: Message['action']) => {
     if (!action || !user) return;
-
-    setIsLoading(true);
-    setError(null);
 
     try {
       const walletAddress = user.futurePassAddress || user.demoWalletAddress;
@@ -199,23 +307,20 @@ const Chat: React.FC = () => {
         throw new Error('No wallet address available');
       }
 
-      const result = await AICopilotService.executeAIAction(
-        action,
-        walletAddress
-      );
+      // TODO: Replace with real signer from wallet
+      const mockSigner = {
+        sendTransaction: async () => ({ wait: async () => ({ hash: '0xMOCKHASH' }) })
+      } as any;
+
+      const txHash = await AICopilotService.executeAIAction(action, walletAddress, mockSigner);
       
-      const confirmationMessage: Message = {
+      setMessages(prev => [...prev, {
         id: Date.now().toString(),
         type: 'ai',
-        text: `Action executed successfully! Transaction hash: ${result}`
-      };
-
-      setMessages(prev => [...prev, confirmationMessage]);
+        text: `Action executed! Transaction hash: ${txHash}`
+      }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to execute action. Please try again.');
-      console.error('Action execution error:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -291,6 +396,9 @@ const Chat: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors" title="Chat History">
+            <ClockIcon className="w-5 h-5 text-gray-400" />
+          </button>
           <div className={`h-2 w-2 rounded-full ${hasApiKey ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
           <button
             onClick={() => setShowApiKeyModal(true)}
@@ -360,7 +468,13 @@ const Chat: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about market trends, token swaps, or APY rates..."
+              placeholder={commandState.type === 'swap' 
+                ? commandState.step === 1 
+                  ? "Enter amount to swap..."
+                  : commandState.step === 2 
+                    ? "Enter token to swap from..."
+                    : "Enter token to swap to..."
+                : "Ask me anything about DeFi... or try /swap 10 ROOT to USDT"}
               className="w-full bg-[#212226] text-white rounded-lg pl-4 pr-12 py-3 outline-none placeholder-gray-500"
               disabled={isLoading || isTyping}
             />
