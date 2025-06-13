@@ -68,7 +68,7 @@ MIT License
 
 ## Support
 
-For support, contact support@genreai.io
+For support, contact genreai.app@gmail.com
 
 ---
 
