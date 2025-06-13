@@ -20,8 +20,8 @@ An intelligent DeFi platform powered by AI, built on the Root Network. Genre AI 
 
 1. Clone and install:
 ```bash
-git clone https://github.com/Godswork4/GenreAi
-cd ai_defi_copilot
+git clone https://github.com/Godswork4/GenreAi-v1
+cd GenreAi
 npm install
 ```
 
